@@ -78,6 +78,8 @@
 
 <script>
 const $ = s => document.querySelector(s);
+// 扫码进来时地址里带着令牌；存一份，万一浏览器不让用 Cookie 也能下载
+const TOKEN = new URLSearchParams(location.search).get('t') || '';
 
 function human(n){
   if(n < 1024) return n + ' B';
@@ -107,13 +109,16 @@ function row(it){
     ? '电脑上这个文件已经不在原来的位置了'
     : human(it.size);
   const a = el.querySelector('a.btn');
-  if(a) a.href = it.url;
+  if(a) a.href = it.url + (TOKEN ? ('&t=' + encodeURIComponent(TOKEN)) : '');
   return el;
 }
 
 async function load(){
   try{
-    const r = await fetch('/api/sendlist', {cache:'no-store'});
+    const r = await fetch('/api/sendlist', {
+      cache: 'no-store',
+      headers: TOKEN ? {'X-Token': TOKEN} : {}
+    });
     if(!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
     const list = $('#list');
