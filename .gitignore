@@ -1,0 +1,25 @@
+# 构建产物
+app/build/
+app/app/build/
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+
+# 编译出的二进制（可由源码重新生成，不入库）
+dist/*.exe
+dist/*.apk
+dist/*.zip
+
+# 运行时生成
+config.json
+index.json
+lansync.log
+*.part
+
+# 其他
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
