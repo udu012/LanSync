@@ -31,7 +31,11 @@ object Scheduler {
 
     fun enable(ctx: Context) {
         val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.UNMETERED) // 只在 Wi-Fi 下跑
+            // 不能写 UNMETERED（只在 Wi-Fi 下跑）：手机开热点时 Wi-Fi 是关着的，
+            // 系统判定当前是蜂窝网络且计费，这个条件永远不满足，任务根本不会启动。
+            // 改成 CONNECTED，再靠 doWork 里的 ping 判断电脑在不在同一局域网——
+            // ping 不通就直接跳过，不会走移动数据传文件，一分流量都不花。
+            .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
 
         val req = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)

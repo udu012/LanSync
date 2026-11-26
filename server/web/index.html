@@ -68,8 +68,9 @@
     background:var(--soft);padding:8px 10px;border-radius:9px;color:var(--text);
   }
   .meta{margin-top:12px;display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--muted)}
-  .meta div{display:flex;justify-content:space-between;gap:10px}
-  .meta code{color:var(--text);opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .meta div{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .meta div>span{white-space:nowrap;flex:0 0 auto}
+  .meta code{flex:1;min-width:0;text-align:right;color:var(--text);opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   button{
     font:inherit;font-size:13px;padding:8px 14px;border-radius:9px;cursor:pointer;
@@ -82,6 +83,12 @@
   button.danger{color:var(--danger);border-color:rgba(229,72,77,.3)}
   button:disabled{opacity:.45;cursor:default}
   .addr button{padding:8px 12px}
+  .ipsel{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+  .ipsel .lbl{display:block;font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.45}
+  .ipbtns{display:flex;flex-wrap:wrap;gap:6px}
+  .ipbtns button{padding:6px 10px;font-size:12px;border-radius:8px}
+  .ipbtns button.on{background:var(--accent);color:#fff;border-color:transparent}
+  .ipbtns button em{font-style:normal;opacity:.72;font-size:11px;margin-left:5px}
 
   .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
   .grid3>div{background:var(--soft);border-radius:11px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
@@ -152,6 +159,10 @@
       <code id="url">…</code>
       <button id="copy">复制</button>
     </div>
+    <div class="ipsel" id="ipsel" hidden>
+      <span class="lbl">电脑有多个网络地址，扫码连不上就换一个</span>
+      <div class="ipbtns" id="ipbtns"></div>
+    </div>
     <div class="meta">
       <div><span>FolderSync 地址</span><code id="dav">…</code></div>
       <div><span>配对令牌</span><code id="tok">…</code></div>
@@ -171,6 +182,7 @@
       <button class="ghost" id="refresh">刷新</button>
       <button class="danger" id="quit">退出程序</button>
     </div>
+    <p class="hint" style="margin:12px 0 0">关掉这个网页不会停止同步。要彻底停止，点「退出程序」。</p>
   </section>
 
   <section class="card up">
@@ -238,10 +250,33 @@ async function loadInfo(){
     $('#tok').textContent = j.token;
     $('#dir').textContent = j.dir;
     $('#qr').src = '/qr.png?ip=' + encodeURIComponent(j.host) + '&v=' + Date.now();
+    renderIPs(j);
   }catch(e){
     $('#status').textContent = '未连接';
     $('#status').classList.add('off');
   }
+}
+
+// 电脑同时连着路由器、手机热点、虚拟机网卡时，二维码里的地址可能不是手机能到的那一个。
+// 把候选地址都列出来，点一下就能换二维码。
+function renderIPs(j){
+  const list = (j.ips || []).filter(x => x && x.ip);
+  if(list.length < 2){ $('#ipsel').hidden = true; return; }
+  $('#ipsel').hidden = false;
+  $('#ipbtns').innerHTML = list.map(x =>
+    '<button data-ip="' + esc(x.ip) + '"' + (x.ip === j.host ? ' class="on"' : '') + '>' +
+      esc(x.ip) + (x.note ? '<em>' + esc(x.note) + '</em>' : '') +
+    '</button>'
+  ).join('');
+  $('#ipbtns').querySelectorAll('button').forEach(btn => {
+    btn.onclick = () => {
+      const ip = btn.dataset.ip;
+      $('#qr').src = '/qr.png?ip=' + encodeURIComponent(ip) + '&v=' + Date.now();
+      $('#url').textContent = 'http://' + ip + ':' + j.port;
+      $('#dav').textContent = 'http://' + ip + ':' + j.port + '/dav';
+      $('#ipbtns').querySelectorAll('button').forEach(o => o.classList.toggle('on', o === btn));
+    };
+  });
 }
 
 async function loadList(){

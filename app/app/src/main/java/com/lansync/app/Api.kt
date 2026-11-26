@@ -24,13 +24,20 @@ class Api(private val p: PrefsData) {
         .retryOnConnectionFailure(true)
         .build()
 
+    // 探测专用：超时压到 2 秒。手机开热点或用流量时，探测必然失败，
+    // 不该让它在连接超时上白等 5 秒。
+    private val pingClient = client.newBuilder()
+        .connectTimeout(2, TimeUnit.SECONDS)
+        .readTimeout(2, TimeUnit.SECONDS)
+        .build()
+
     private fun builder(path: String) = Request.Builder()
         .url("http://${p.host}:${p.port}$path")
         .header("X-Token", p.token)
 
-    /** 探测电脑端是否在线。 */
+    /** 探测电脑端是否在线。连得上说明两边在同一个局域网。 */
     fun ping(): Boolean = try {
-        client.newCall(builder("/api/ping").build()).execute().use { it.isSuccessful }
+        pingClient.newCall(builder("/api/ping").build()).execute().use { it.isSuccessful }
     } catch (e: Exception) {
         false
     }

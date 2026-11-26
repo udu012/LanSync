@@ -29,7 +29,7 @@ import (
 
 const (
 	appName = "LanSync"
-	appVer  = "1.0.0"
+	appVer  = "1.1.0"
 )
 
 //go:embed web/index.html
@@ -49,6 +49,7 @@ var (
 	index    *Index
 	listenAt string
 	httpAddr string
+	runPort  int // 本次运行实际使用的端口（可能因占用而避让，但不写回配置）
 )
 
 // ---------------------------------------------------------------- 配置
@@ -99,7 +100,9 @@ func openLog(dir string) {
 	f, err := os.OpenFile(filepath.Join(dir, "lansync.log"),
 		os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err == nil {
-		log.SetOutput(io.MultiWriter(f))
+		// 同时写文件和控制台：控制台版窗口里能实时看日志，
+		// GUI 版下 stdout 无效，写入错误被忽略，无副作用。
+		log.SetOutput(io.MultiWriter(os.Stdout, f))
 	}
 	log.SetFlags(log.LstdFlags)
 }
@@ -177,30 +180,58 @@ $app = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell
 
 // ---------------------------------------------------------------- 工具
 
-func lanIP() string {
-	// 优先按网卡打分：真实局域网私有地址 > 虚拟网卡 > 链路本地
-	virtual := []string{"vethernet", "vmware", "virtualbox", "hyper-v", "docker", "wsl", "loopback", "utun", "tap", "tun", "zt", "tailscale"}
-	best, bestScore := "", 0
+type ifaceIP struct {
+	IP    string `json:"ip"`
+	Iface string `json:"iface"`
+	Note  string `json:"note"`
+	Score int    `json:"-"`
+}
+
+var virtualIface = []string{"vethernet", "vmware", "virtualbox", "hyper-v", "docker", "wsl", "loopback", "utun", "tap", "tun", "zt", "tailscale"}
+
+func isVirtualIface(name string) bool {
+	n := strings.ToLower(name)
+	for _, v := range virtualIface {
+		if strings.Contains(n, v) {
+			return true
+		}
+	}
+	return false
+}
+
+// hotspotNet 识别手机热点常见网段，便于看板上标注出来。
+// 安卓默认 192.168.43.x，部分机型 192.168.42.x；Windows 移动热点 192.168.137.x；
+// iPhone 个人热点 172.20.10.x。
+func hotspotNet(ip net.IP) bool {
+	switch {
+	case ip[0] == 192 && ip[1] == 168 && (ip[2] == 43 || ip[2] == 42 || ip[2] == 137):
+		return true
+	case ip[0] == 172 && ip[1] == 20 && ip[2] == 10:
+		return true
+	}
+	return false
+}
+
+// candidateIPs 列出本机所有可用的局域网地址，按「更像手机能访问到」排序。
+// 电脑同时连着路由器、手机热点、虚拟机网卡时，靠这个列表让用户自己选，
+// 比程序猜要可靠。
+func candidateIPs() []ifaceIP {
+	out := make([]ifaceIP, 0, 4)
 	ifaces, _ := net.Interfaces()
 	for _, ifc := range ifaces {
 		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
 			continue
 		}
-		name := strings.ToLower(ifc.Name)
-		isVirt := false
-		for _, v := range virtual {
-			if strings.Contains(name, v) {
-				isVirt = true
-				break
-			}
-		}
 		addrs, _ := ifc.Addrs()
 		for _, a := range addrs {
 			ipn, ok := a.(*net.IPNet)
-			if !ok || ipn.IP.To4() == nil {
+			if !ok {
 				continue
 			}
 			ip := ipn.IP.To4()
+			if ip == nil {
+				continue
+			}
 			score := 0
 			switch {
 			case ip[0] == 192 && ip[1] == 168:
@@ -212,16 +243,42 @@ func lanIP() string {
 			case ip[0] == 169 && ip[1] == 254:
 				score = 1
 			}
-			if isVirt {
+			note := ""
+			if isVirtualIface(ifc.Name) {
 				score -= 15
+				note = "虚拟网卡"
+			} else if hotspotNet(ip) {
+				score += 5
+				note = "手机热点"
 			}
-			if score > bestScore {
-				best, bestScore = ip.String(), score
+			if score <= 0 {
+				continue
 			}
+			out = append(out, ifaceIP{IP: ip.String(), Iface: ifc.Name, Note: note, Score: score})
 		}
 	}
-	if best != "" {
-		return best
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
+
+	// 有正常地址时，丢掉 169.254.x（链路本地，DHCP 没拿到地址时的临时地址），
+	// 它对用户没有意义，列出来只会让人困惑。
+	if len(out) > 1 {
+		kept := out[:0]
+		for _, x := range out {
+			if strings.HasPrefix(x.IP, "169.254.") {
+				continue
+			}
+			kept = append(kept, x)
+		}
+		if len(kept) > 0 {
+			out = kept
+		}
+	}
+	return out
+}
+
+func lanIP() string {
+	if list := candidateIPs(); len(list) > 0 {
+		return list[0].IP
 	}
 	// 兜底：拿默认路由出口地址
 	if conn, err := net.Dial("udp", "8.8.8.8:80"); err == nil {
@@ -231,6 +288,34 @@ func lanIP() string {
 		}
 	}
 	return "127.0.0.1"
+}
+
+// findRunning 探测本机是否已有 LanSync 在跑，返回它实际监听的端口。
+// 有了它，第二次双击 exe 就不会再起一个进程，而是直接把看板打开。
+func findRunning(pref int) int {
+	client := &http.Client{Timeout: 300 * time.Millisecond}
+	for p := pref; p < pref+30 && p < 65535; p++ {
+		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/api/ping", p), nil)
+		if err != nil {
+			continue
+		}
+		if cfg.Token != "" {
+			req.Header.Set("X-Token", cfg.Token)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		var v struct {
+			Name string `json:"name"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&v)
+		resp.Body.Close()
+		if v.Name == appName {
+			return p
+		}
+	}
+	return 0
 }
 
 func pickPort(pref int) int {
@@ -320,6 +405,13 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ping 不校验令牌：只返回名字和版本，供程序做单实例探测、供 App 判断
+	// 电脑是否在线。不含任何敏感信息。
+	if p == "/api/ping" {
+		writeJSON(w, 200, map[string]interface{}{"ok": true, "name": appName, "ver": appVer})
+		return
+	}
+
 	if strings.HasPrefix(p, "/api/") {
 		if !authorized(r) {
 			writeErr(w, http.StatusUnauthorized, "未授权，请重新扫码配对")
@@ -337,7 +429,7 @@ func (s *server) handleQR(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("ip"); v != "" {
 		ip = v
 	}
-	target := fmt.Sprintf("http://%s:%d/?t=%s", ip, cfg.Port, cfg.Token)
+	target := fmt.Sprintf("http://%s:%d/?t=%s", ip, runPort, cfg.Token)
 	png, err := qrcode.Encode(target, qrcode.Medium, 512)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
@@ -357,9 +449,10 @@ func (s *server) handleAPI(w http.ResponseWriter, r *http.Request) {
 			"name":    appName,
 			"ver":     appVer,
 			"host":    lanIP(),
-			"port":    cfg.Port,
-			"url":     fmt.Sprintf("http://%s:%d", lanIP(), cfg.Port),
-			"dav":     fmt.Sprintf("http://%s:%d/dav", lanIP(), cfg.Port),
+			"ips":     candidateIPs(),
+			"port":    runPort,
+			"url":     fmt.Sprintf("http://%s:%d", lanIP(), runPort),
+			"dav":     fmt.Sprintf("http://%s:%d/dav", lanIP(), runPort),
 			"token":   cfg.Token,
 			"dir":     rootDir,
 			"notify":  cfg.Notify,
@@ -619,6 +712,7 @@ func main() {
 	noAuto := flag.Bool("no-autostart", false, "不写入开机自启项")
 	openUI := flag.Bool("open", true, "启动后自动打开看板")
 	testToast := flag.Bool("test-toast", false, "测试系统通知后退出")
+	force := flag.Bool("force", false, "即使已有实例在运行，也强制再启动一个")
 	flag.Parse()
 
 	if *port > 0 {
@@ -637,13 +731,25 @@ func main() {
 		return
 	}
 
+	// 单实例：已经有一个在跑，就只把看板打开，不再起新进程。
+	// 这解决了「双击一次多一个进程、端口一路上涨」的问题。
+	if !*force {
+		if running := findRunning(cfg.Port); running > 0 {
+			fmt.Printf("LanSync 已经在运行（端口 %d），正在打开看板…\n", running)
+			openBrowser(fmt.Sprintf("http://127.0.0.1:%d", running))
+			return
+		}
+	}
+
 	rootDir = cfg.Dir
 	if err := os.MkdirAll(rootDir, 0o755); err != nil {
 		rootDir = filepath.Join(dir, "接收文件")
 		_ = os.MkdirAll(rootDir, 0o755)
 	}
 
-	cfg.Port = pickPort(cfg.Port)
+	// 端口避让只影响本次运行，结果不写回配置文件。
+	// 否则 8765 被占用一次后，配置里就变成 8766，以后每次启动都从 8766 起，越开越大。
+	runPort = pickPort(cfg.Port)
 	saveConfig()
 
 	if !*noAuto {
@@ -659,23 +765,23 @@ func main() {
 	}()
 
 	ip := lanIP()
-	httpAddr = fmt.Sprintf("%s:%d", ip, cfg.Port)
-	listenAt = fmt.Sprintf(":%d", cfg.Port)
+	httpAddr = fmt.Sprintf("%s:%d", ip, runPort)
+	listenAt = fmt.Sprintf(":%d", runPort)
 
 	fmt.Println("──────────────────────────────────────────")
 	fmt.Printf("  %s %s 已启动\n", appName, appVer)
 	fmt.Printf("  接收目录 : %s\n", rootDir)
-	fmt.Printf("  电脑看板 : http://127.0.0.1:%d\n", cfg.Port)
-	fmt.Printf("  手机地址 : http://%s:%d\n", ip, cfg.Port)
+	fmt.Printf("  电脑看板 : http://127.0.0.1:%d\n", runPort)
+	fmt.Printf("  手机地址 : http://%s:%d\n", ip, runPort)
 	fmt.Printf("  配对令牌 : %s\n", cfg.Token)
 	fmt.Println("──────────────────────────────────────────")
 
-	log.Printf("启动完成 port=%d dir=%s", cfg.Port, rootDir)
+	log.Printf("启动完成 port=%d dir=%s", runPort, rootDir)
 
 	if *openUI && runtime.GOOS == "windows" {
 		go func() {
 			time.Sleep(600 * time.Millisecond)
-			openBrowser(fmt.Sprintf("http://127.0.0.1:%d", cfg.Port))
+			openBrowser(fmt.Sprintf("http://127.0.0.1:%d", runPort))
 		}()
 	}
 
