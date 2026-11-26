@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LanSync</string>
+    <string name="tagline">手机照片自动备份到自己的电脑</string>
+    <string name="pair">扫描电脑二维码</string>
+    <string name="sync_now">立即同步</string>
+    <string name="auto_on">自动备份：已开启</string>
+    <string name="auto_off">自动备份：已关闭</string>
+</resources>
