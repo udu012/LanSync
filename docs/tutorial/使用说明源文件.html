@@ -40,6 +40,8 @@
     background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.28);
     backdrop-filter:blur(4px);
   }
+  /* 这条不是卖点，是提醒：和蓝色标签区分开 */
+  .chip.hot{background:rgba(251,191,36,.24);border-color:rgba(253,224,71,.75);color:#fff8e1;font-weight:600}
 
   /* ---------- 流程条 ---------- */
   .flow{
@@ -178,6 +180,7 @@
     <span class="chip">不经过云端</span>
     <span class="chip">不消耗流量</span>
     <span class="chip">免安装 · 双击就用</span>
+    <span class="chip hot">接收目录别放 C 盘</span>
   </div>
 </header>
 
@@ -200,6 +203,7 @@
         <h3>把程序放到一个固定的文件夹</h3>
         <p>解压后，把 <b class="k">LanSync.exe</b> 放到 <kbd>D:\LanSync\</kbd> 这类你找得到的位置。</p>
         <p>不要放在 <kbd>C:\Program Files</kbd>，那里没有写入权限，程序会存不下日志和配置。</p>
+        <p>程序本身只占几 MB，放哪都不影响；但<b class="k">它收到的照片存在哪，下一节要单独改一次</b>。</p>
       </div>
     </div>
 
@@ -223,14 +227,58 @@
     </div>
 
     <figure>
-      <img src="shot_dash2.png" alt="电脑看板">
-      <figcaption>电脑上打开的看板：左边二维码，右边概览，下面是收到的文件</figcaption>
+      <img src="shot_dash3.png" alt="电脑看板">
+      <figcaption>电脑上打开的看板：左边二维码，右边概览，中间是上传口和「发给手机」，最下面是收到的文件</figcaption>
     </figure>
+  </section>
+
+  <!-- 二、第一件事：接收目录挪出 C 盘 -->
+  <section class="card">
+    <h2><span class="bar"></span>二、第一件事：把接收目录挪出 C 盘</h2>
+    <p class="sub">装好就改，别等 C 盘满了再搬</p>
+
+    <p style="font-size:15.5px;color:#475467;line-height:1.72">照片和视频只会越来越多，一年几十 GB 很平常。默认存在 C 盘的用户「文档」里，等 C 盘快满了，系统变慢、更新失败、软件装不上，全跟着来。所以<b class="k">装好后的第一件事，就是把它指到 D 盘或 E 盘</b>。</p>
+
+    <div class="warn" style="margin-top:16px"><span class="i">!</span><span>这一步<b>越早做越省事</b>。已经有几千张照片时再换，程序要把文件一个个搬过去，C 盘到 E 盘属于跨盘复制，得等一会儿；一个空目录换起来是一瞬间的事。</span></div>
+
+    <figure style="margin:20px 0 0">
+      <img src="chg_card2.png" alt="更改接收目录">
+      <figcaption>「概览」里，接收目录后面那个橙色的「更改」</figcaption>
+    </figure>
+
+    <div class="step" style="margin-top:24px">
+      <div class="num">1</div>
+      <div class="body">
+        <h3>点「更改」，挑一个新文件夹</h3>
+        <p>会弹出 Windows 自带的文件夹选择框，直接选个位置就行，比如 <kbd>D:\手机备份</kbd>、<kbd>E:\照片存档</kbd>。没有的文件夹可以当场新建。</p>
+        <p>弹不出选择框（少数精简版系统），弹层里也能<b class="k">直接粘贴路径</b>，效果一样。</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">2</div>
+      <div class="body">
+        <h3>已经有文件时，它会问你要不要一起搬</h3>
+        <figure style="margin:16px 0 0">
+          <img src="chg_modal.png" alt="更换目录确认">
+        </figure>
+        <p style="margin-top:16px">选 <b class="k">一起搬过去</b>：旧文件全部挪到新位置，新位置就是完整的一份。同一个盘内几乎瞬间完成；跨盘（比如从 C 到 E）要按文件大小等一会儿，这期间别关页面。</p>
+        <p>选 <b class="k">只换位置</b>：以后收到的东西存到新位置，旧文件留在原地不动。</p>
+      </div>
+    </div>
+
+    <div class="tip"><span class="i">i</span><span>换完之后手机会自动对上号，<b>不会把老照片重传一遍</b>。想换回去，再点一次「更改」选回原来的文件夹就行。</span></div>
+
+    <div class="checks" style="margin-top:18px">
+      <div><i>✓</i><span><b>可以选</b>：D 盘 / E 盘下的任意普通文件夹、移动硬盘、U 盘、能正常写入的 NAS 挂载盘</span></div>
+      <div><i>✓</i><span><b>不要选</b>：C 盘（尤其「桌面」「下载」「文档」这三个最占地方）、<kbd>C:\Program Files</kbd>（没写入权限，程序存不下配置）</span></div>
+      <div><i>✓</i><span><b>经常拔的盘要留意</b>：接收目录在移动硬盘上时，盘拔了同步就会失败，插回来才恢复。长期用建议选内置硬盘</span></div>
+    </div>
   </section>
 
   <!-- 二、手机端 -->
   <section class="card">
-    <h2><span class="bar"></span>二、手机扫码配对</h2>
+    <h2><span class="bar"></span>三、手机扫码配对</h2>
     <p class="sub">配对一次，永久记住</p>
 
     <div class="split">
@@ -278,7 +326,7 @@
 
   <!-- 三、保活 -->
   <section class="card">
-    <h2><span class="bar"></span>三、这两个开关一定要打开</h2>
+    <h2><span class="bar"></span>四、这两个开关一定要打开</h2>
     <p class="sub">否则同步会在后台被系统悄悄掐断</p>
 
     <div class="step">
@@ -302,19 +350,19 @@
 
   <!-- 四、结果 -->
   <section class="card">
-    <h2><span class="bar"></span>四、怎么确认传成功了</h2>
+    <h2><span class="bar"></span>五、怎么确认传成功了</h2>
     <p class="sub">三个地方都能看到</p>
     <div class="checks">
       <div><i>✓</i><span>电脑右下角弹通知：<b>已接收 N 个文件 · XX MB</b></span></div>
       <div><i>✓</i><span>手机通知栏出现一条 <b>备份完成</b></span></div>
-      <div><i>✓</i><span>文件躺在 <b>文档 \ LanSync \ DCIM \ Camera \</b> 里（照搬手机相册的目录）</span></div>
+      <div><i>✓</i><span>文件躺在<b>第二节你设的那个目录</b>里：<b>D:\手机备份 \ DCIM \ Camera \</b>（目录结构和手机相册一样）</span></div>
     </div>
-    <div class="tip"><span class="i">i</span><span>同一次同步里重复的照片只会存一份，不会越传越多。想换存放位置不用改配置，看板上点「更改」即可，见最后一节。</span></div>
+    <div class="tip"><span class="i">i</span><span>同一次同步里重复的照片只会存一份，不会越传越多。接收目录建议一开始就放到 D 盘或 E 盘，见第二节。</span></div>
   </section>
 
   <!-- 五、排查 -->
   <section class="card">
-    <h2><span class="bar"></span>五、连不上？按这个顺序查</h2>
+    <h2><span class="bar"></span>六、连不上？按这个顺序查</h2>
     <p class="sub">九成问题在前两条</p>
     <div class="fix">
       <div><b>手机和电脑是不是同一个 Wi-Fi？</b>不能是手机流量，也不能是「访客网络」。</div>
@@ -327,7 +375,7 @@
 
   <!-- 六、热点 -->
   <section class="card">
-    <h2><span class="bar"></span>六、没有路由器？手机开热点也能用</h2>
+    <h2><span class="bar"></span>七、没有路由器？手机开热点也能用</h2>
     <p class="sub">出差、租房、临时环境都适用</p>
     <p style="font-size:15.5px;color:#475467;line-height:1.72">手机开热点、电脑连上，两者就处在同一个局域网。传文件只在热点内部转发，<b class="k">不消耗手机流量</b>。</p>
     <div class="warn" style="margin-top:16px"><span class="i">!</span><span>电脑连上热点后，Windows 会问「是否允许此电脑被其他设备发现」——必须选 <b>是</b>。选「否」等于把网络设为「公用」，防火墙会拦掉连接。</span></div>
@@ -336,7 +384,7 @@
 
   <!-- 七、电脑发文件给手机 -->
   <section class="card">
-    <h2><span class="bar"></span>七、反过来：电脑也能把文件发给手机</h2>
+    <h2><span class="bar"></span>八、反过来：电脑也能把文件发给手机</h2>
     <p class="sub">手机不装 App 也能收，大小不限</p>
     <p style="font-size:15.5px;color:#475467;line-height:1.72">看板中间那张「发给手机」的卡片就是干这个的。它和前面几节方向相反，但用的是同一条连接，不用多配任何东西。</p>
 
@@ -369,40 +417,6 @@
 
     <div class="tip"><span class="i">i</span><span><b>大小不限</b>：程序是边读边发，传 20GB 也不占内存。下载断了不要紧，重新点一次会<b>接着上次的位置继续</b>，不用从头来。</span></div>
     <div class="warn"><span class="i">!</span><span>发件箱里的东西 <b>24 小时后自动失效</b>，清掉的只是链接和拖拽产生的副本，你自己电脑上的原文件一根毫毛都不会动。想提前清空，点卡片上的「清空」。</span></div>
-  </section>
-
-  <!-- 八、换存储位置 -->
-  <section class="card">
-    <h2><span class="bar"></span>八、C 盘快满了？换个存的地方</h2>
-    <p class="sub">换到别的盘或移动硬盘，不用重装，也不用让手机重传</p>
-
-    <figure style="margin:20px 0 0">
-      <img src="chg_card.png" alt="更改接收目录">
-      <figcaption>看板「概览」里，接收目录后面那个橙色的「更改」</figcaption>
-    </figure>
-
-    <div class="step">
-      <div class="num">1</div>
-      <div class="body">
-        <h3>点「更改」，挑一个新文件夹</h3>
-        <p>会弹出 Windows 自带的文件夹选择框，选个地方就行，比如 <kbd>E:\手机备份</kbd>。没有的文件夹可以当场新建。</p>
-        <p>移动硬盘、U 盘、NAS 挂载盘都能选，只要能正常写入。</p>
-      </div>
-    </div>
-
-    <div class="step">
-      <div class="num">2</div>
-      <div class="body">
-        <h3>已经有文件时，它会问你要不要一起搬过去</h3>
-        <figure style="margin:16px 0 0">
-          <img src="chg_modal.png" alt="更换目录确认">
-        </figure>
-        <p style="margin-top:16px">选 <b class="k">一起搬过去</b>：旧文件全部挪到新位置，新位置就是完整的一份。同一个盘内几乎瞬间完成；跨盘（比如从 C 到 E）要按文件大小等一会儿，这期间别关页面。</p>
-        <p>选 <b class="k">只换位置</b>：以后收到的东西存到新位置，旧文件留在原地不动。</p>
-      </div>
-    </div>
-
-    <div class="tip"><span class="i">i</span><span>换完之后手机会自动对上号，<b>不会把老照片重传一遍</b>。想换回去，再点一次「更改」选回原来的文件夹就行。</span></div>
   </section>
 
   <footer>

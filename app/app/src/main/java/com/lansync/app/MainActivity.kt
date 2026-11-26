@@ -13,8 +13,8 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.app.ActivityCompat
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import java.text.SimpleDateFormat
@@ -25,9 +25,14 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var tvStatus: TextView
     private lateinit var tvLast: TextView
+    private lateinit var tvScope: TextView
     private lateinit var btnPair: Button
     private lateinit var btnSync: Button
     private lateinit var btnAuto: Button
+
+    /** 备份范围摘要要扫一遍媒体库，10 秒内重复回到主页就不用再扫。 */
+    private var scopeAt = 0L
+    private var scopeSeq = 0
 
     private val timeFmt = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
 
@@ -37,6 +42,11 @@ class MainActivity : AppCompatActivity() {
         handlePair(text)
     }
 
+    /** 从「备份范围」返回时立刻重算摘要，别让用户看到过期的数字。 */
+    private val albumLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { refreshScope(force = true) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -44,11 +54,19 @@ class MainActivity : AppCompatActivity() {
 
         tvStatus = findViewById(R.id.tv_status)
         tvLast = findViewById(R.id.tv_last)
+        tvScope = findViewById(R.id.tv_scope)
         btnPair = findViewById(R.id.btn_pair)
         btnSync = findViewById(R.id.btn_sync)
         btnAuto = findViewById(R.id.btn_auto)
 
         btnPair.setOnClickListener { startScan() }
+
+        findViewById<android.view.View>(R.id.card_scope).setOnClickListener {
+            albumLauncher.launch(Intent(this, AlbumActivity::class.java))
+        }
+        findViewById<android.view.View>(R.id.card_guide).setOnClickListener {
+            startActivity(Intent(this, GuideActivity::class.java))
+        }
 
         btnSync.setOnClickListener {
             if (!Prefs.load(this).paired) {
@@ -83,6 +101,7 @@ class MainActivity : AppCompatActivity() {
         // 配对过又开着自动备份，就把守护服务拉起来（进程被系统清过也能自愈）
         val p = Prefs.load(this)
         if (p.paired && p.auto) WatchService.start(this)
+        refreshScope()
     }
 
     private fun refresh() {
@@ -97,6 +116,52 @@ class MainActivity : AppCompatActivity() {
             tvLast.text = "上次同步：$last\n${p.lastResult.ifEmpty { "点「立即同步」试一次" }}"
         }
         btnAuto.text = if (p.auto) getString(R.string.auto_on) else getString(R.string.auto_off)
+    }
+
+    /**
+     * 刷新「备份范围」那一行：全部相册还是关掉了几个、还剩多少体积。
+     * 全量统计要走一遍媒体库，放后台线程，几秒内重复回主页不再重复扫。
+     */
+    private fun refreshScope(force: Boolean = false) {
+        if (!force && System.currentTimeMillis() - scopeAt < 10_000) return
+        scopeAt = System.currentTimeMillis()
+        val seq = ++scopeSeq
+        Thread {
+            val albums = try {
+                Albums.scan(this)
+            } catch (e: Exception) {
+                emptyList<Album>()
+            }
+            val ex = Prefs.load(this).excluded
+            runOnUiThread {
+                if (seq != scopeSeq || isFinishing) return@runOnUiThread
+                renderScope(albums, ex)
+            }
+        }.start()
+    }
+
+    private fun renderScope(albums: List<Album>, ex: Set<String>) {
+        if (albums.isEmpty()) {
+            tvScope.text = "还没读到照片"
+            tvScope.setTextColor(ContextCompat.getColor(this, R.color.textMuted))
+            return
+        }
+        val off = albums.count { Albums.isExcluded(it.dir, ex) }
+        val on = albums.size - off
+
+        if (on == 0) {
+            tvScope.text = "全关掉了 · 不会上传任何照片"
+            tvScope.setTextColor(0xFFB45309.toInt())
+            return
+        }
+        tvScope.setTextColor(ContextCompat.getColor(this, R.color.textMuted))
+        if (off == 0) {
+            val bytes = albums.sumOf { it.bytes }
+            tvScope.text = "全部 ${albums.size} 个相册 · ${Albums.sizeText(bytes)}"
+        } else {
+            val bytes = albums.filter { !Albums.isExcluded(it.dir, ex) }.sumOf { it.bytes }
+            tvScope.text = "已关 $off 个 · 备份 $on 个 · ${Albums.sizeText(bytes)}"
+        }
     }
 
     private fun startScan() {

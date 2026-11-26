@@ -123,6 +123,11 @@ App 端解析这个 URL 取 host / port / token，扫码一次永久保存。
 | `SyncEngine.sync` | 必须 `@Synchronized` | 定时任务、守护服务、手动同步三处会同时开火，并发跑会把同一批文件传两遍 |
 | 看板 HTML | 改完必须 `go build` 重新生成 exe | HTML 是 `go:embed` 编译进去的 |
 | 看板 CSS | 带 `display:block` 的元素用 `hidden` 属性藏不住 | 类选择器优先级高于 UA 的 `[hidden]{display:none}`，要显式写 `xxx[hidden]{display:none}` |
+| `MediaScanner.scan(ctx, applyFilter)` | 主界面摘要和勾选页用 `applyFilter=false`，同步时用默认 `true` | 勾选页要列全量（包括关掉的），同步要跳过；搞反了要么列不全要么关了还照传 |
+| `PrefsData.excluded` | 存**排除**名单，不存包含名单 | 新装的 App 多出一个相册时应该自动备份，存包含名单就得让用户回来重勾一次 |
+| `Albums.isExcluded` | 前缀也算命中（`dir` == 排除项 或 以其 + `/` 开头） | 微信会换子目录名，只比全等会关了还照传 |
+| `AlbumActivity.persist` | 相册没统计出来之前不许写盘 | 用户在手滑点「全选」时，空列表会把原来的排除名单清光 |
+| `assets/guide/guide.html` | 文案必须与 `docs/tutorial/使用说明源文件.html` 保持一致 | 同一篇说明的两种排版：一个进 App，一个出长图；改一处忘另一处就会打架 |
 
 ## 6. 构建命令
 
@@ -174,6 +179,18 @@ gradle assembleDebug
    二维码指向 `/s` 收件页，手机浏览器点下载。实测 600MB 文件：上传/下载全程 RSS 稳定在 7MB，
    md5 一致，Range 返回 206，401/404 行为正确，24 小时过期后副本自动删除
 
+**v1.3.1 手机端（APK 1.3.0 → 1.3.1，versionCode 5）改的三件事**：
+1. **使用说明进 App** —— 长图整张塞进去要 3.7MB、解码 131MB，低端机必 OOM，已否决。
+   改成 `assets/guide/guide.html` + 6 张 WebP（合计 297KB），APK 5.55 → 5.86MB。
+   页面去掉固定 1080px 宽、加 `@media (max-width:820px)` 一套手机样式，390px 下无横向滚动；
+   看板截图缩到 340px 必然看不清小字，所以配图可点开成 2 倍宽拖动查看，WebView 也开了双指缩放。
+   极少数 ROM 的 WebView 会「加载成功但白屏」，1.5 秒后查 `body.innerText` 长度兜底切文字版
+2. **相册勾选（备份范围）** —— `Albums.kt` 聚合一趟 MediaStore 得到「目录 / 数量 / 体积」，
+   `AlbumActivity` 列出来逐个开关，顶部全选 / 全不选；存的是排除名单，默认全开、新相册自动纳入。
+   约 300 行，无新依赖
+3. **主界面两个入口** —— 「备份范围」卡片显示「全部 23 个相册 · 1.8 GB / 已关 2 个 …」，
+   底部「使用说明」入口（随内容滚动，没有改布局）
+
 **未验证（重要）**：
 1. **APK 从未在真机跑过** — 沙箱无 Android 设备。扫码、MediaStore 读取、后台通知、热点场景下的自动同步都需要真机确认
 2. **Windows 专有路径未在 Windows 上执行** — Toast 通知（PowerShell/WinRT）、开机自启（reg add）、`findRunning` 在 Windows 上的端口探测
@@ -182,6 +199,9 @@ gradle assembleDebug
 5. **`/api/sendpick` 的多选文件框没在 Windows 上弹过** —— 和目录选择框同一套 PowerShell 写法，Linux 侧只测了 unsupported 回退
 6. **手机端真机下载大文件**（尤其 iOS 的「文件」App）没验证，超过 4GB 的行为未知
 7. **v1.3 三项手机端改动（竖屏、常驻守护、目录规则）都没上过真机** —— 编译通过不等于跑通，重点看：常驻通知是否出现、拍完照十几秒是否自动传、电脑上目录是否变成 `DCIM/Camera`
+8. **v1.3.1 手机端新增的相册勾选、App 内说明页没上过真机** —— 重点看：
+   相册列表能不能列全（有的 ROM 会把微信图片放在 `DCIM/WeChat`）、开关是否即时生效、
+   WebView 排版是否正常、双指缩放和「点击放大」能不能用、白屏兜底会不会误判
 
 **合理的下一步**（按价值排序）：
 1. 真机跑通并修 bug —— 优先级最高，其它都往后排

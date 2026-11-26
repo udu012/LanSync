@@ -36,6 +36,18 @@
             </intent-filter>
         </activity>
 
+        <!-- 备份范围：勾选要备份的相册 -->
+        <activity
+            android:name=".AlbumActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
+
+        <!-- 图文使用说明（本地 HTML，不联网） -->
+        <activity
+            android:name=".GuideActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
+
         <service
             android:name=".SyncService"
             android:exported="false"

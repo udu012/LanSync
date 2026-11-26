@@ -33,9 +33,15 @@ object SyncEngine {
             return Result(false, 0, 0, 0, "连不上电脑：请确认手机和电脑在同一 Wi-Fi，且电脑端 LanSync 正在运行")
         }
 
-        val all = MediaScanner.scan(ctx)
+        val scan = MediaScanner.scan(ctx)
+        val all = scan.items
         if (all.isEmpty()) {
-            return remember(ctx, prefs, Result(true, 0, 0, 0, "没有找到照片或视频"))
+            val msg = if (scan.filtered > 0) {
+                "相册都关掉了，本次没有可备份的内容（在主界面「备份范围」里重新勾选）"
+            } else {
+                "没有找到照片或视频"
+            }
+            return remember(ctx, prefs, Result(true, 0, 0, 0, msg))
         }
 
         val byPath = HashMap<String, MediaItem>(all.size)

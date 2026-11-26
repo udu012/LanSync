@@ -87,6 +87,57 @@
             android:textSize="15sp"
             app:cornerRadius="12dp" />
 
+        <!-- 备份范围：点进去勾选要备份的相册 -->
+        <LinearLayout
+            android:id="@+id/card_scope"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_card_btn"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="18dp"
+            android:paddingTop="13dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="13dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="备份范围"
+                    android:textColor="@color/textMain"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/tv_scope"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="全部相册"
+                    android:textColor="@color/textMuted"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingStart="8dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="6dp"
+                android:text="选择 ›"
+                android:textColor="@color/colorPrimary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -95,5 +146,37 @@
             android:text="开启自动备份后，只要手机连上家里的 Wi-Fi，照片和视频就会自动传到电脑，你不需要做任何操作。\n\n如果发现后台不同步，请在系统设置里允许 LanSync 自启动、并把电池策略设为「不限制」。"
             android:textColor="@color/textMuted"
             android:textSize="12.5sp" />
+
+        <!-- 使用说明入口：放在内容最底部，跟着页面一起滚 -->
+        <LinearLayout
+            android:id="@+id/card_guide"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/bg_card_btn"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="18dp"
+            android:paddingTop="16dp"
+            android:paddingEnd="18dp"
+            android:paddingBottom="16dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="使用说明"
+                android:textColor="@color/textMain"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="图文步骤 ›"
+                android:textColor="@color/textMuted"
+                android:textSize="12.5sp" />
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>

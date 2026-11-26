@@ -8,20 +8,30 @@ import android.provider.MediaStore
 
 data class MediaItem(val uri: Uri, val path: String, val size: Long, val mtime: Long)
 
+/** items 是这次要管的文件；filtered 是被用户关掉的相册里的人头数。 */
+data class ScanOutcome(val items: List<MediaItem>, val filtered: Int)
+
 /**
  * 扫描相册里的图片和视频，按手机上的原始目录结构生成目标路径。
  *
  * v1.2 是「日期/文件名」归档，照片一多就变成一堆按天分的文件夹，找东西全靠回忆日期。
  * v1.3 改成照搬手机的目录：DCIM/Camera/IMG_0001.jpg、Pictures/WeChat/xxx.jpg，
  * 电脑上打开就是手机里那套熟悉的结构。
+ *
+ * v1.4 起支持「备份范围」：用户在相册勾选页关掉的目录，扫描时直接跳过。
  */
 object MediaScanner {
 
     /** 拿不到 RELATIVE_PATH 的旧机型 / 个别目录，兜底放这里。 */
     private const val FALLBACK_DIR = "未分类"
 
-    fun scan(ctx: Context): List<MediaItem> {
+    /**
+     * @param applyFilter 是否应用用户的「备份范围」。相册勾选页要列全量，传 false。
+     */
+    fun scan(ctx: Context, applyFilter: Boolean = true): ScanOutcome {
         val out = ArrayList<MediaItem>(512)
+        val excluded = if (applyFilter) Prefs.load(ctx).excluded else emptySet()
+        var filtered = 0
 
         // RELATIVE_PATH 是 Android 10 才有的列，老系统要退回 DATA（绝对路径）。
         val useRelative = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
@@ -53,7 +63,7 @@ object MediaScanner {
             )
         } catch (e: Exception) {
             null
-        } ?: return out
+        } ?: return ScanOutcome(out, filtered)
 
         val seen = HashMap<String, Int>()
 
@@ -84,6 +94,13 @@ object MediaScanner {
                     .filter { it.isNotEmpty() }
                     .joinToString("/") { sanitize(it) }
 
+                // 用户在「备份范围」里关掉的相册，整个目录跳过
+                val dirKey = if (dir.isEmpty()) FALLBACK_DIR else dir
+                if (excluded.isNotEmpty() && Albums.isExcluded(dirKey, excluded)) {
+                    filtered++
+                    continue
+                }
+
                 var path = if (dir.isEmpty()) "$FALLBACK_DIR/$name" else "$dir/$name"
 
                 // 同一目录下同名的不同文件（比如两个 IMG_0001.jpg）自动加序号，
@@ -109,7 +126,7 @@ object MediaScanner {
                 )
             }
         }
-        return out
+        return ScanOutcome(out, filtered)
     }
 
     /** "DCIM/Camera/" → "DCIM/Camera"；去掉首尾斜杠，空值返回空串。 */
