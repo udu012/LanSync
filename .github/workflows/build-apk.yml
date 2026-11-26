@@ -1,36 +1,72 @@
-name: build-apk
+name: build
 
 on:
   push:
     branches: [ main, master ]
+    tags: [ 'v*' ]
   workflow_dispatch:
 
 jobs:
-  build:
+  windows-exe:
+    name: 电脑端 exe
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache-dependency-path: server/go.sum
+
+      - name: 交叉编译（静默版 + 控制台版）
+        working-directory: server
+        run: |
+          mkdir -p ../dist
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags "-s -w -H windowsgui" -o ../dist/LanSync.exe .
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags "-s -w" -o ../dist/LanSync-console.exe .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LanSync-windows
+          path: dist/*.exe
+
+  android-apk:
+    name: 手机端 APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.7'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # runner 自带 SDK，但缺 platform 34。不用 android-actions/setup-android：
+      # 它会去装已经废弃的 "tools" 包，报 Failed to find package 'tools' 直接失败。
+      - name: 准备 Android SDK
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}"
+          SDKMGR="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMGR" ]; then
+            SDKMGR="$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)"
+          fi
+          echo "sdk=$SDK  sdkmanager=$SDKMGR"
+          (yes | "$SDKMGR" --licenses > /dev/null 2>&1) || true
+          "$SDKMGR" "platforms;android-34" "build-tools;34.0.0" > /dev/null
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
 
-      - name: Build debug APK
+      - name: 编译
         working-directory: app
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: gradle assembleRelease --no-daemon --stacktrace
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: LanSync-apk
-          path: app/app/build/outputs/apk/debug/*.apk
+          path: app/app/build/outputs/apk/release/*.apk
