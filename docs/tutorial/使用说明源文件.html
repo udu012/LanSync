@@ -334,9 +334,46 @@
     <div class="tip"><span class="i">i</span><span>如果电脑同时插着网线或连着别的 Wi-Fi，二维码可能指向手机到不了的地址。这时看板会多出一排「网络地址」按钮，点标着 <b>手机热点</b> 的那个，二维码会重新生成，再扫一次即可。</span></div>
   </section>
 
-  <!-- 七、换存储位置 -->
+  <!-- 七、电脑发文件给手机 -->
   <section class="card">
-    <h2><span class="bar"></span>七、C 盘快满了？换个存的地方</h2>
+    <h2><span class="bar"></span>七、反过来：电脑也能把文件发给手机</h2>
+    <p class="sub">手机不装 App 也能收，大小不限</p>
+    <p style="font-size:15.5px;color:#475467;line-height:1.72">看板中间那张「发给手机」的卡片就是干这个的。它和前面几节方向相反，但用的是同一条连接，不用多配任何东西。</p>
+
+    <figure style="margin:20px 0 0">
+      <img src="send_card.png" alt="发给手机卡片">
+      <figcaption>左边是给手机扫的二维码，右边是你放进去的文件</figcaption>
+    </figure>
+
+    <div class="step">
+      <div class="num">1</div>
+      <div class="body">
+        <h3>把文件放进发件箱</h3>
+        <p>点 <b class="k">选择电脑上的文件…</b>，弹出 Windows 的文件框，按住 Ctrl 可以一次选好几个。</p>
+        <p>也可以直接把文件<b class="k">拖</b>到虚线框里。<br>区别是：选择框是「原地共享」，不复制、不占第二份空间；拖进去的会复制一份到程序目录的 <kbd>outbox</kbd> 里，不怕原文件被挪走。</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">2</div>
+      <div class="body">
+        <h3>手机扫码，点下载</h3>
+        <p>手机连同一个 Wi-Fi，用相机扫左边那个二维码，会打开一个只有文件列表的页面。</p>
+        <figure style="margin:16px 0 0">
+          <img src="send_phone.png" alt="手机收件页" style="max-width:300px;margin:0 auto">
+          <figcaption>手机上看到的样子：文件名、大小、一个下载按钮</figcaption>
+        </figure>
+        <p style="margin-top:16px">点 <b class="k">下载</b> 就开始传，进度条在浏览器里。安卓存进「文件管理 → 下载」；iPhone 会进「文件」App，想进相册得自己再保存一次。</p>
+      </div>
+    </div>
+
+    <div class="tip"><span class="i">i</span><span><b>大小不限</b>：程序是边读边发，传 20GB 也不占内存。下载断了不要紧，重新点一次会<b>接着上次的位置继续</b>，不用从头来。</span></div>
+    <div class="warn"><span class="i">!</span><span>发件箱里的东西 <b>24 小时后自动失效</b>，清掉的只是链接和拖拽产生的副本，你自己电脑上的原文件一根毫毛都不会动。想提前清空，点卡片上的「清空」。</span></div>
+  </section>
+
+  <!-- 八、换存储位置 -->
+  <section class="card">
+    <h2><span class="bar"></span>八、C 盘快满了？换个存的地方</h2>
     <p class="sub">换到别的盘或移动硬盘，不用重装，也不用让手机重传</p>
 
     <figure style="margin:20px 0 0">
@@ -373,7 +410,7 @@
     所有文件只存在你自己的硬盘上，不经过任何第三方服务器<br>
     局域网内访问需要配对令牌，可在 config.json 中修改<br>
     <span style="color:#a9b1c0">同步 ≠ 备份：重要资料建议再复制一份到移动硬盘</span><br><br>
-    <span style="color:#b6bdc9;font-size:12.5px">LanSync v1.2.0</span>
+    <span style="color:#b6bdc9;font-size:12.5px">LanSync v1.3.1</span>
   </footer>
 
 </main>

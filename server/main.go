@@ -30,11 +30,14 @@ import (
 
 const (
 	appName = "LanSync"
-	appVer  = "1.3.0"
+	appVer  = "1.3.1"
 )
 
 //go:embed web/index.html
 var indexHTML []byte
+
+//go:embed web/send.html
+var sendHTML []byte
 
 type Config struct {
 	Port   int    `json:"port"`
@@ -406,6 +409,24 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 手机扫「发给手机」的二维码会落到这里：一个只有下载按钮的极简页面
+	if p == "/s" || p == "/s/" {
+		if !authorized(r) {
+			http.Error(w, "链接已失效，回电脑上重新扫一次二维码", http.StatusUnauthorized)
+			return
+		}
+		s.handleSendPage(w, r)
+		return
+	}
+	if p == "/s/f" {
+		if !authorized(r) {
+			http.Error(w, "链接已失效，回电脑上重新扫一次二维码", http.StatusUnauthorized)
+			return
+		}
+		s.handleSendGet(w, r)
+		return
+	}
+
 	if strings.HasPrefix(p, "/dav") {
 		if !authorized(r) {
 			w.Header().Set("WWW-Authenticate", `Basic realm="LanSync"`)
@@ -441,6 +462,10 @@ func (s *server) handleQR(w http.ResponseWriter, r *http.Request) {
 		ip = v
 	}
 	target := fmt.Sprintf("http://%s:%d/?t=%s", ip, runPort, cfg.Token)
+	// ?u= 可以指定任意链接（发件箱的收件页要用），只放行 http(s)，别被当成任意内容生成器
+	if v := r.URL.Query().Get("u"); strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://") {
+		target = v
+	}
 	png, err := qrcode.Encode(target, qrcode.Medium, 512)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
@@ -478,6 +503,21 @@ func (s *server) handleAPI(w http.ResponseWriter, r *http.Request) {
 
 	case r.URL.Path == "/api/put" && (r.Method == http.MethodPut || r.Method == http.MethodPost):
 		s.handlePut(w, r)
+
+	case r.URL.Path == "/api/sendlist":
+		s.handleSendList(w, r)
+
+	case r.URL.Path == "/api/sendpick" && r.Method == http.MethodPost:
+		s.handleSendPick(w, r)
+
+	case r.URL.Path == "/api/sendput" && (r.Method == http.MethodPut || r.Method == http.MethodPost):
+		s.handleSendPut(w, r)
+
+	case r.URL.Path == "/api/senddel" && r.Method == http.MethodPost:
+		s.handleSendDel(w, r)
+
+	case r.URL.Path == "/api/sendclear" && r.Method == http.MethodPost:
+		s.handleSendClear(w, r)
 
 	case r.URL.Path == "/api/list":
 		s.handleList(w, r)
@@ -588,7 +628,10 @@ func (s *server) handleCheck(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		m, ok := index.get(rel)
-		if ok && m.Size == it.Size && abs64(m.Mtime-it.Mtime) <= 5 {
+		// 命中索引还不够：用户可能在资源管理器里直接删/挪了文件，那种情况下
+		// 清单里的记录就成了「幽灵」，光看清单会一直回「已存在」，手机永远不补传。
+		// 所以必须再问一次磁盘。（多花 N 次 stat，3 万张照片约零点几秒）
+		if ok && m.Size == it.Size && abs64(m.Mtime-it.Mtime) <= 5 && fileOnDisk(rel, it.Size) {
 			have++
 			continue
 		}
@@ -619,6 +662,54 @@ func (s *server) handleCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]interface{}{
 		"ok": true, "need": need, "have": have, "total": len(body.Items),
 	})
+}
+
+// fileOnDisk 校验索引里那条记录对应的文件是否真的还在、大小是否一致。
+func fileOnDisk(rel string, size int64) bool {
+	full, err := absPath(rel)
+	if err != nil {
+		return false
+	}
+	st, err := os.Stat(full)
+	if err != nil || st.IsDir() {
+		return false
+	}
+	return st.Size() == size
+}
+
+// healIndex 启动后在后台跑一遍体检：把「磁盘上已经没有」的记录从清单里剔掉。
+// 不这么做的话，历史遗留的幽灵记录会一直污染看板计数，也会让跨路径去重误判。
+// 但如果缺失比例高得离谱（比如接收目录在没挂载的移动硬盘上），就只告警不删，
+// 免得一次误判把整份清单清空。
+func healIndex() {
+	snap := index.snapshot()
+	if len(snap) == 0 {
+		return
+	}
+	missing := make([]string, 0, 8)
+	for p := range snap {
+		full, err := absPath(p)
+		if err != nil {
+			missing = append(missing, p)
+			continue
+		}
+		if st, err := os.Stat(full); err != nil || st.IsDir() {
+			missing = append(missing, p)
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+	if len(snap) > 20 && float64(len(missing))/float64(len(snap)) > 0.5 {
+		log.Printf("启动自检：清单 %d 条里有 %d 条找不到文件，比例过高，可能是磁盘没挂上，这次不动清单",
+			len(snap), len(missing))
+		return
+	}
+	for _, p := range missing {
+		index.del(p)
+	}
+	index.save()
+	log.Printf("启动自检：%d 条记录对应的文件已不在磁盘上，已从清单移除（下次同步会补传）", len(missing))
 }
 
 func abs64(v int64) int64 {
@@ -926,6 +1017,9 @@ func main() {
 			index.save()
 		}
 	}()
+
+	boxInit(dir)
+	go healIndex()
 
 	ip := lanIP()
 	httpAddr = fmt.Sprintf("%s:%d", ip, runPort)

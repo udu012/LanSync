@@ -9,7 +9,7 @@
 
 - **不做**：多设备互同步、双向、冲突合并、版本历史、公网穿透、账号体系
 - **Docker/服务器？** 不需要。电脑端就是一个单文件 exe，双击跑起来就完事
-- 当前版本 v1.3.0，双端已实现并编译通过
+- 电脑端 v1.3.1（新增「发给手机」+ 修复幽灵记录），手机端 v1.3.0（本次无需重装）
 
 ## 2. 技术栈与产物
 
@@ -25,6 +25,8 @@
 server/
   main.go        服务入口、路由分发、鉴权、二维码、Windows 通知、开机自启、局域网 IP 探测
   store.go       落盘逻辑：路径净化、原子写入、SHA-256、index.json 索引
+  outbox.go      发件箱：电脑→手机的文件投递（原地共享 / 拖拽副本 / 24h 过期）
+  web/send.html  手机端收件页（内嵌，极简下载列表）
   dav.go         WebDAV 兜底通道（给 FolderSync / 资源管理器用）
   web/index.html 看板界面（内嵌，改完必须重新编译 exe）
 app/app/src/main/
@@ -64,8 +66,15 @@ App 端解析这个 URL 取 host / port / token，扫码一次永久保存。
 | `/api/delete` | POST | 是 | `{"path":"..."}` | `{ok}` |
 | `/api/quit` | POST | 是 | — | 触发进程退出 |
 | `/api/pickdir` | POST | 是 | — | 弹系统文件夹选择框，返回 `{ok,dir}`；用户取消 `{ok:false,cancelled:true}`；不支持 `{ok:false,unsupported:true}` |
+| `/api/sendlist` | GET | 是 | — | 发件箱清单 `{ok,items:[{id,name,size,missing,url}],count,url,qr,ttl}` |
+| `/api/sendpick` | POST | 是 | — | 弹系统**多选文件**框，登记进发件箱；返回 `{ok,added,failed,count}` |
+| `/api/sendput?name=<urlencoded>` | PUT | 是 | Body 为文件二进制 | 拖拽上传的副本，返回 `{ok,id,name,size}` |
+| `/api/senddel` | POST | 是 | `{"id":"..."}` | 移出发件箱（副本连文件删，原文件不动） |
+| `/api/sendclear` | POST | 是 | — | 清空发件箱 |
+| `/s?t=<token>` | GET | 是 | — | 手机收件页（HTML），扫码链接自带令牌并种 Cookie |
+| `/s/f?id=<itemId>` | GET | 是 | — | 下载文件，`http.ServeContent` 提供 Range/断点续传 |
 | `/api/setdir` | POST | 是 | `{"dir":"D:\\手机备份","move":true}` | 切换接收目录，`move` 表示把旧文件一起搬过去；返回 `{ok,dir,old,moved,bytes,failed,indexed}` |
-| `/qr.png` | GET | 否 | 可带 `?ip=` 覆盖 | PNG 二维码 |
+| `/qr.png` | GET | 否 | 可带 `?ip=` 覆盖地址，或 `?u=<完整链接>` 指定任意内容（仅放行 http/https） | PNG 二维码 |
 | `/dav/*` | PROPFIND/MKCOL/PUT/GET/MOVE/DELETE/OPTIONS/LOCK | Basic | — | WebDAV 标准响应 |
 
 **核对逻辑（核心，别改坏）**：`size` 相等 **且** `|mtime 差| <= 5 秒` 才算已存在，否则进 `need`。
@@ -107,6 +116,10 @@ App 端解析这个 URL 取 host / port / token，扫码一次永久保存。
 | `pick_windows.go` | `FolderBrowserDialog` 必须挂一个不可见、`TopMost` 的 owner Form 再 `ShowDialog($owner)` | 脚本是隐藏窗口启动的，没有前台窗口，无主对话框会被系统排到浏览器后面，用户得回桌面才看得见 |
 | `AndroidManifest.xml` | `CaptureActivity` 要 `tools:replace="android:screenOrientation"` 覆盖成 `portrait` | zxing 库自己声明的是 `fullSensor`，手机一歪扫码页就横过来 |
 | `WatchService.kt` | 前台服务 + `startForeground(ID_WATCH, …)`，`START_STICKY`，`onDestroy` 必须注销 observer | 没有前台通知会被系统随时杀掉；observer 漏注册/漏注销会同时丢事件和漏内存 |
+| `handleCheck` | 索引命中后**必须**再 `fileOnDisk()` 校验磁盘 | 用户在资源管理器里删文件不会更新 `index.json`，光看清单会一直回「已存在」，手机永远不补传（实测：删掉后仍回 `have:1`） |
+| `healIndex` | 缺失比例 > 50% 且总数 > 20 时只告警不删 | 接收目录在没挂载的移动硬盘上时，一次误判会把整份清单清空 |
+| `outbox.go` | 原地共享（`Copied=false`）的条目，过期/删除时**只能删记录，绝不能删文件** | 那是用户自己的文件，删了就出大事 |
+| `outbox.go` | 下载必须走 `http.ServeContent`，别手写 `io.Copy` | 手写就没有 Range / Content-Length，手机进度条和断点续传全丢 |
 | `SyncEngine.sync` | 必须 `@Synchronized` | 定时任务、守护服务、手动同步三处会同时开火，并发跑会把同一批文件传两遍 |
 | 看板 HTML | 改完必须 `go build` 重新生成 exe | HTML 是 `go:embed` 编译进去的 |
 | 看板 CSS | 带 `display:block` 的元素用 `hidden` 属性藏不住 | 类选择器优先级高于 UA 的 `[hidden]{display:none}`，要显式写 `xxx[hidden]{display:none}` |
@@ -153,12 +166,22 @@ gradle assembleDebug
 6. 守护服务的通知是 `IMPORTANCE_MIN` + `setSilent`，不响不弹
 7. 版本号 1.3.0（APK versionCode 4，可覆盖安装，配对信息不丢）
 
+**v1.3.1 改的两件事**：
+1. **修掉「电脑上删了照片，手机同步还说全部一致」** —— 根因是 `check` 只查内存索引不查磁盘，
+   资源管理器删除会留下幽灵记录。现在命中索引后额外 `os.Stat` 校验（3000 条实测 14ms，可忽略），
+   并在启动时后台 `healIndex` 清掉历史幽灵记录（实测日志：`启动自检：1 条记录对应的文件已不在磁盘上`）
+2. **新增「发给手机」** —— 看板多一张卡片：系统多选文件框（原地共享、零拷贝）或拖拽（存副本），
+   二维码指向 `/s` 收件页，手机浏览器点下载。实测 600MB 文件：上传/下载全程 RSS 稳定在 7MB，
+   md5 一致，Range 返回 206，401/404 行为正确，24 小时过期后副本自动删除
+
 **未验证（重要）**：
 1. **APK 从未在真机跑过** — 沙箱无 Android 设备。扫码、MediaStore 读取、后台通知、热点场景下的自动同步都需要真机确认
 2. **Windows 专有路径未在 Windows 上执行** — Toast 通知（PowerShell/WinRT）、开机自启（reg add）、`findRunning` 在 Windows 上的端口探测
 3. 国产 ROM 保活效果未知（小米/OPPO/vivo 可能几小时杀一次）
 4. **`/api/pickdir` 的系统选择框只能在 Windows 上验证** —— 沙箱是 Linux，只跑过「不支持」回退路径；PowerShell 脚本是照 WinForms 文档写的，真机第一次点「更改」要留意有没有弹框、有没有压到后面
-5. **v1.3 三项手机端改动（竖屏、常驻守护、目录规则）都没上过真机** —— 编译通过不等于跑通，重点看：常驻通知是否出现、拍完照十几秒是否自动传、电脑上目录是否变成 `DCIM/Camera`
+5. **`/api/sendpick` 的多选文件框没在 Windows 上弹过** —— 和目录选择框同一套 PowerShell 写法，Linux 侧只测了 unsupported 回退
+6. **手机端真机下载大文件**（尤其 iOS 的「文件」App）没验证，超过 4GB 的行为未知
+7. **v1.3 三项手机端改动（竖屏、常驻守护、目录规则）都没上过真机** —— 编译通过不等于跑通，重点看：常驻通知是否出现、拍完照十几秒是否自动传、电脑上目录是否变成 `DCIM/Camera`
 
 **合理的下一步**（按价值排序）：
 1. 真机跑通并修 bug —— 优先级最高，其它都往后排

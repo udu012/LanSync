@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f5f7fb">
+<title>LanSync · 接收电脑文件</title>
+<style>
+  :root{
+    --bg:#f5f7fb;--card:#fff;--text:#101828;--muted:#667085;--line:#e6e9f0;
+    --accent:#2563eb;--ok:#12b76a;--danger:#d92d20;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#0b1020;--card:#151b2e;--text:#e8ecf6;--muted:#94a0bb;--line:#26304a;--accent:#5b8cff;}
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{
+    margin:0;background:var(--bg);color:var(--text);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    padding:18px 16px calc(24px + env(safe-area-inset-bottom));
+  }
+  header{margin-bottom:16px}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin:0}
+  .item{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:12px;
+  }
+  .ico{
+    width:40px;height:40px;flex:0 0 40px;border-radius:10px;background:rgba(37,99,235,.1);
+    color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;
+  }
+  .meta{min-width:0;flex:1}
+  .name{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .size{font-size:12px;color:var(--muted);margin-top:2px}
+  .btn{
+    flex:0 0 auto;background:var(--accent);color:#fff;text-decoration:none;
+    padding:10px 16px;border-radius:10px;font-size:14px;font-weight:600;border:0;
+  }
+  .btn:active{opacity:.8}
+  .btn.dead{background:transparent;color:var(--muted);border:1px solid var(--line);pointer-events:none}
+  .empty{
+    background:var(--card);border:1px dashed var(--line);border-radius:14px;
+    padding:40px 20px;text-align:center;color:var(--muted);font-size:14px;
+  }
+  .tip{
+    margin-top:18px;color:var(--muted);font-size:12.5px;line-height:1.7;
+    border-left:3px solid var(--line);padding-left:12px;
+  }
+  .tip b{color:var(--text)}
+  .bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .refresh{
+    background:transparent;border:1px solid var(--line);color:var(--muted);
+    border-radius:9px;padding:6px 12px;font-size:13px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>电脑发来的文件</h1>
+  <p class="sub">点右边的「下载」，存进手机</p>
+</header>
+
+<div class="bar">
+  <span class="sub" id="count">…</span>
+  <button class="refresh" id="refresh">刷新</button>
+</div>
+
+<main id="list"><div class="empty">正在取清单…</div></main>
+
+<div class="tip">
+  <b>存到哪了？</b><br>
+  安卓：浏览器下载完成后，在「文件管理 → 下载」里。<br>
+  iPhone：点下载后进「文件」App → 下载项，需要手动保存到相册。<br>
+  <b>链接 24 小时后失效</b>，过期了回电脑上重新发一次。
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+function human(n){
+  if(n < 1024) return n + ' B';
+  const u = ['KB','MB','GB','TB'];
+  let i = -1;
+  do { n /= 1024; i++; } while(n >= 1024 && i < u.length - 1);
+  return (n < 10 ? n.toFixed(1) : Math.round(n)) + ' ' + u[i];
+}
+
+function ext(name){
+  const m = /\.([a-z0-9]{1,4})$/i.exec(name || '');
+  return m ? m[1].toUpperCase() : 'FILE';
+}
+
+function row(it){
+  const el = document.createElement('div');
+  el.className = 'item';
+  el.innerHTML =
+    '<div class="ico">' + ext(it.name) + '</div>' +
+    '<div class="meta"><div class="name"></div><div class="size"></div></div>' +
+    (it.missing
+      ? '<span class="btn dead">已失效</span>'
+      : '<a class="btn" download>下载</a>');
+  el.querySelector('.name').textContent = it.name;
+  el.querySelector('.name').title = it.name;
+  el.querySelector('.size').textContent = it.missing
+    ? '电脑上这个文件已经不在原来的位置了'
+    : human(it.size);
+  const a = el.querySelector('a.btn');
+  if(a) a.href = it.url;
+  return el;
+}
+
+async function load(){
+  try{
+    const r = await fetch('/api/sendlist', {cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    const list = $('#list');
+    list.innerHTML = '';
+    if(!d.items || !d.items.length){
+      list.innerHTML = '<div class="empty">发件箱是空的<br>回电脑上点「发给手机」把文件放进来</div>';
+      $('#count').textContent = '共 0 个文件';
+      return;
+    }
+    d.items.forEach(it => list.appendChild(row(it)));
+    $('#count').textContent = '共 ' + d.items.length + ' 个文件';
+  }catch(e){
+    $('#list').innerHTML = '<div class="empty">清单取不到，可能是链接过期了<br>回电脑上重新扫一次二维码</div>';
+    $('#count').textContent = '';
+  }
+}
+
+$('#refresh').addEventListener('click', load);
+load();
+</script>
+</body>
+</html>

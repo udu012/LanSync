@@ -42,7 +42,7 @@
     max-width:1080px;margin:0 auto;padding:6px 22px 48px;
     display:grid;gap:16px;
     grid-template-columns:340px minmax(0,1fr);
-    grid-template-areas:"con stat" "con up" "list list";
+    grid-template-areas:"con stat" "con up" "send send" "list list";
     align-items:start;
   }
   .card{
@@ -150,6 +150,29 @@
   #queue .pct{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
   #queue .done i{background:var(--ok)}
 
+  /* 发给手机：左边二维码，右边文件列表 */
+  .card.send{grid-area:send}
+  .card.send .hint{margin-bottom:14px}
+  .sendwrap{display:grid;grid-template-columns:205px minmax(0,1fr);gap:22px;align-items:start}
+  .sendleft{display:flex;flex-direction:column;gap:9px}
+  .sendleft[hidden]{display:none}
+  .sendleft .qrwrap{padding:8px}
+  /* 这条链接是要被复制走的，宁可折行也别省略成一串省略号 */
+  .sendleft .addr code{white-space:normal;word-break:break-all;font-size:11px;line-height:1.45}
+  .sendleft .addr{align-items:flex-start}
+  .sendleft .addr .mini{flex:0 0 auto}
+  .sendright{min-width:0;display:flex;flex-direction:column;gap:10px}
+  .sendright .drop{padding:16px 14px}
+  .sendright .actions{margin:0;align-items:center}
+  .slist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;max-height:250px;overflow:auto}
+  .srow{display:grid;grid-template-columns:minmax(0,1fr) 84px 52px;gap:10px;align-items:center;
+        padding:9px 2px;border-top:1px solid var(--line);font-size:12.5px}
+  .srow:first-child{border-top:none}
+  .srow .sname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .srow .ssize{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+  .srow.dead .sname{color:var(--muted);text-decoration:line-through}
+  @media (max-width:820px){ .sendwrap{grid-template-columns:1fr} }
+
   .lhead{display:flex;align-items:baseline;justify-content:space-between}
   .lhead h2{margin-bottom:12px}
   .lhead .muted{font-size:12px;color:var(--muted)}
@@ -171,7 +194,7 @@
   .empty{text-align:center;color:var(--muted);font-size:13px;padding:34px 0}
 
   @media (max-width:820px){
-    main{grid-template-columns:1fr;grid-template-areas:"con" "stat" "up" "list";padding:4px 14px 40px}
+    main{grid-template-columns:1fr;grid-template-areas:"con" "stat" "up" "send" "list";padding:4px 14px 40px}
     header{padding:14px 16px 8px}
     .card{padding:16px}
     .frow{grid-template-columns:30px minmax(0,1fr) 74px 40px;gap:9px}
@@ -230,6 +253,30 @@
       <span class="sub">也可以把文件拖到这里</span>
     </label>
     <ul id="queue"></ul>
+  </section>
+
+  <section class="card send">
+    <h2>发给手机</h2>
+    <p class="hint">手机不装 App 也能收：把文件放进来，手机扫码下载，大小不限</p>
+    <div class="sendwrap">
+      <div class="sendleft" id="sqrbox" hidden>
+        <div class="qrwrap"><img id="sqr" alt="收件二维码"></div>
+        <div class="addr"><code id="surl">…</code><button class="mini" id="scopy">复制</button></div>
+      </div>
+      <div class="sendright">
+        <div class="actions">
+          <button id="spick">选择电脑上的文件…</button>
+          <button class="ghost" id="sclear">清空</button>
+          <span class="muted" id="scount" style="align-self:center;font-size:12px"></span>
+        </div>
+        <label class="drop" id="sdrop">
+          <input type="file" id="sfiles" multiple hidden>
+          <span>点击选择文件</span>
+          <span class="sub">也可以把文件拖到这里（会复制一份到发件箱）</span>
+        </label>
+        <ul class="slist" id="slist"></ul>
+      </div>
+    </div>
   </section>
 
   <section class="card list">
@@ -526,7 +573,7 @@ $('#chgdir').addEventListener('click', async () => {
 });
 
 $('#open').addEventListener('click', () => fetch('/api/open', {method:'POST'}));
-$('#refresh').addEventListener('click', () => { loadInfo(); loadList(); });
+$('#refresh').addEventListener('click', () => { loadInfo(); loadList(); loadSend(); });
 $('#quit').addEventListener('click', async () => {
   if(!confirm('退出后手机将无法连接，确定？')) return;
   await fetch('/api/quit', {method:'POST'});
@@ -539,7 +586,125 @@ $('#copy').addEventListener('click', async () => {
   setTimeout(() => $('#copy').textContent = '复制', 1500);
 });
 
-loadInfo(); loadList();
+// ---------------------------------------------------------------- 发给手机
+
+async function loadSend(){
+  try{
+    const r = await fetch('/api/sendlist', {cache:'no-store'});
+    renderSend(await r.json());
+  }catch(e){ /* 偶尔失败不要紧，下次刷新会好 */ }
+}
+
+function renderSend(j){
+  const items = j.items || [];
+  const box = $('#sqrbox');
+  if(items.length){
+    $('#scount').textContent = '共 ' + items.length + ' 个 · 24 小时内有效';
+    box.hidden = false;
+    const img = $('#sqr');
+    if(img.dataset.u !== j.url){ // 链接没变就别反复加载图片
+      img.dataset.u = j.url; img.src = j.qr;
+      // 显示去掉 http:// 的短形式，省得挤成三行；复制时给完整地址
+      $('#surl').textContent = j.url.replace(/^https?:\/\//, '');
+      $('#surl').dataset.full = j.url;
+    }
+  }else{
+    $('#scount').textContent = '';
+    box.hidden = true;
+  }
+  if(!items.length){
+    $('#slist').innerHTML = '<li class="srow" style="grid-template-columns:1fr;color:var(--muted)">还没有文件。点上面「选择电脑上的文件」，或者直接把文件拖进来。</li>';
+    return;
+  }
+  $('#slist').innerHTML = items.map(it =>
+    '<li class="srow' + (it.missing ? ' dead' : '') + '">' +
+      '<span class="sname" title="' + esc(it.name) + '">' + esc(it.name) + '</span>' +
+      '<span class="ssize">' + (it.missing ? '原文件不在了' : human(it.size)) + '</span>' +
+      '<button class="mini" data-del="' + it.id + '">移除</button>' +
+    '</li>'
+  ).join('');
+}
+
+// 拖拽/点选进来的文件：内容会存一份到发件箱目录
+function sendOne(file){
+  return new Promise(resolve => {
+    const li = document.createElement('li');
+    li.className = 'srow';
+    li.innerHTML = '<span class="sname" title="' + esc(file.name) + '">' + esc(file.name) +
+      '</span><span class="ssize">0%</span><button class="mini" disabled>…</button>';
+    $('#slist').prepend(li);
+    const pct = li.querySelector('.ssize');
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', '/api/sendput?name=' + encodeURIComponent(file.name), true);
+    xhr.upload.onprogress = e => {
+      if(e.lengthComputable) pct.textContent = Math.round(e.loaded / e.total * 100) + '%';
+    };
+    xhr.onload = () => { pct.textContent = xhr.status === 200 ? '已加入' : '失败'; resolve(); };
+    xhr.onerror = () => { pct.textContent = '失败'; resolve(); };
+    xhr.send(file);
+  });
+}
+
+async function sendFiles(files){
+  if(!files || !files.length) return;
+  for(const f of files) await sendOne(f);
+  loadSend();
+}
+
+$('#spick').addEventListener('click', async () => {
+  const btn = $('#spick');
+  btn.disabled = true;
+  try{
+    const r = await fetch('/api/sendpick', {method:'POST'});
+    const j = await r.json();
+    if(j.unsupported){
+      toast('这台电脑弹不出选择框，用下面的虚线框选，或直接把文件拖进来');
+      return;
+    }
+    if(j.count) toast('已加入 ' + j.count + ' 个文件，手机扫码就能下');
+    else if(j.failed && j.failed.length) toast(j.failed[0]);
+    loadSend();
+  }catch(e){
+    toast('操作失败：' + e.message);
+  }finally{
+    btn.disabled = false;
+  }
+});
+
+$('#sclear').addEventListener('click', async () => {
+  if(!confirm('清空发件箱？电脑上的原文件不会受任何影响。')) return;
+  await fetch('/api/sendclear', {method:'POST'});
+  loadSend();
+  toast('发件箱已清空');
+});
+
+$('#slist').addEventListener('click', async e => {
+  const b = e.target.closest('[data-del]');
+  if(!b) return;
+  await fetch('/api/senddel', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({id: b.dataset.del})});
+  loadSend();
+});
+
+$('#sfiles').addEventListener('change', e => { sendFiles([...e.target.files]); e.target.value = ''; });
+['dragenter','dragover'].forEach(ev => $('#sdrop').addEventListener(ev, e => {
+  e.preventDefault(); $('#sdrop').classList.add('over');
+}));
+['dragleave','drop'].forEach(ev => $('#sdrop').addEventListener(ev, e => {
+  e.preventDefault(); $('#sdrop').classList.remove('over');
+}));
+$('#sdrop').addEventListener('drop', e => sendFiles([...e.dataTransfer.files]));
+
+$('#scopy').addEventListener('click', async () => {
+  try{
+    const src = $('#surl');
+    await navigator.clipboard.writeText(src.dataset.full || src.textContent);
+    $('#scopy').textContent = '已复制';
+  }catch(e){ $('#scopy').textContent = '长按复制'; }
+  setTimeout(() => { $('#scopy').textContent = '复制'; }, 1500);
+});
+
+loadInfo(); loadList(); loadSend();
 setInterval(loadList, 4000);
 </script>
 </body>

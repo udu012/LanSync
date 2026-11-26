@@ -97,3 +97,85 @@ func pickFolder(current string) (string, error) {
 	}
 	return strings.TrimSpace(string(b)), nil
 }
+
+// fileScript 多选文件对话框。和目录选择框同一套套路：结果写 UTF-8 文件，
+// 一行一个绝对路径，避开 PowerShell 代码页乱码。
+const fileScript = `$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Windows.Forms | Out-Null
+
+$owner = New-Object System.Windows.Forms.Form
+$owner.Text = 'LanSync'
+$owner.FormBorderStyle = 'None'
+$owner.ShowInTaskbar = $false
+$owner.StartPosition = 'CenterScreen'
+$owner.Size = New-Object System.Drawing.Size(1, 1)
+$owner.Opacity = 0
+$owner.TopMost = $true
+$owner.Show()
+$owner.Activate() | Out-Null
+
+$dlg = New-Object System.Windows.Forms.OpenFileDialog
+$dlg.Title = '选择要发给手机的文件（可按住 Ctrl 多选）'
+$dlg.Multiselect = $true
+$dlg.CheckFileExists = $true
+$dlg.RestoreDirectory = $true
+
+$r = $dlg.ShowDialog($owner)
+$owner.Close()
+if ($r -eq [System.Windows.Forms.DialogResult]::OK) {
+  [IO.File]::WriteAllLines(OUTFILE, $dlg.FileNames, (New-Object System.Text.UTF8Encoding($false)))
+  exit 0
+}
+exit 2
+`
+
+// pickFiles 弹出系统「打开文件」对话框（支持多选），返回用户选中的绝对路径列表。
+// 用户点取消返回空列表，不算错误。
+func pickFiles() ([]string, error) {
+	shell, err := exec.LookPath("powershell")
+	if err != nil {
+		if shell, err = exec.LookPath("pwsh"); err != nil {
+			return nil, errors.New("找不到 PowerShell，无法弹出选择框")
+		}
+	}
+
+	outFile, err := os.CreateTemp("", "lansync-files-*.txt")
+	if err != nil {
+		return nil, err
+	}
+	outPath := outFile.Name()
+	outFile.Close()
+	os.Remove(outPath)
+	defer os.Remove(outPath)
+
+	script := strings.ReplaceAll(fileScript, "OUTFILE", psQuote(outPath))
+
+	psFile, err := os.CreateTemp("", "lansync-pickfile-*.ps1")
+	if err != nil {
+		return nil, err
+	}
+	psPath := psFile.Name()
+	defer os.Remove(psPath)
+	_, _ = psFile.WriteString("\ufeff" + script)
+	psFile.Close()
+
+	cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-STA",
+		"-ExecutionPolicy", "Bypass", "-File", psPath)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	runErr := cmd.Run()
+
+	b, err := os.ReadFile(outPath)
+	if err != nil {
+		if ee, ok := runErr.(*exec.ExitError); ok && ee.ExitCode() == 2 {
+			return nil, nil // 用户点了取消
+		}
+		return nil, errors.New("无法打开选择框，可以直接把文件拖进页面")
+	}
+	var out []string
+	for _, line := range strings.Split(string(b), "\n") {
+		if v := strings.TrimSpace(line); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out, nil
+}
