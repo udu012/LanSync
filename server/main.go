@@ -292,9 +292,20 @@ func lanIP() string {
 
 // findRunning 探测本机是否已有 LanSync 在跑，返回它实际监听的端口。
 // 有了它，第二次双击 exe 就不会再起一个进程，而是直接把看板打开。
+//
+// 扫描范围要往前也覆盖：旧版本会把避让后的端口写回配置，导致配置里是 8771、
+// 而实例实际跑在 8770。只看前半段会漏掉这种遗留情况。
 func findRunning(pref int) int {
+	start := pref - 30
+	if start < 1024 {
+		start = 1024
+	}
+	end := pref + 30
+	if end > 65535 {
+		end = 65535
+	}
 	client := &http.Client{Timeout: 300 * time.Millisecond}
-	for p := pref; p < pref+30 && p < 65535; p++ {
+	for p := start; p < end; p++ {
 		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/api/ping", p), nil)
 		if err != nil {
 			continue
