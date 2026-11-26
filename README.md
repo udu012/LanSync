@@ -1,11 +1,31 @@
 # LanSync · 局域网自动同步
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-2563eb.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/udu012/LanSync?color=2f81f7)](https://github.com/udu012/LanSync/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20%C2%B7%20Android%208%2B-6b7280.svg)](#)
+
 手机拍的照片、视频，只要连上家里同一个 Wi-Fi，就自动传到你自己的电脑上。
 不经过任何云、不上传外网、不用数据线、不用点任何按钮。
 
 反过来也能用：在电脑看板上把文件放进「发给手机」，手机扫码就能下载，大小不限、不装 App 也行。
 
-- 电脑端：一个 `LanSync.exe`，5 MB，免安装，双击即用，后台静默运行
+![界面预览](界面预览.png)
+
+## 下载
+
+去 [Releases](https://github.com/udu012/LanSync/releases/latest) 取最新版：
+
+| 文件 | 给谁用 | 说明 |
+|---|---|---|
+| `LanSync.exe` | 电脑 | 静默运行，双击即用，已自动加入开机启动 |
+| `LanSync-控制台版.exe` | 电脑 | 带黑窗口，连不上时用它看日志 |
+| `LanSync.apk` | 手机 | 扫码配对后自动备份 |
+| `使用说明.png` | 都看 | 一张图文长图，可以直接转发给家人 |
+| `LanSync-v1.3.1.zip` | 全部 | 上面四个打成一个包 |
+
+一步步怎么做，看 [使用说明](docs/使用说明.md)。
+
+- 电脑端：一个 `LanSync.exe`，6 MB，免安装，双击即用，后台静默运行
 - 手机端：一个 `LanSync.apk`，扫码配对，装完就不用再管
 - 同步完：电脑右下角弹通知「已接收 N 个文件」，手机通知栏也会提示
 
@@ -200,14 +220,59 @@ gradle assembleDebug
 
 ```
 LanSync/
-├─ dist/                     发布产物
-│  ├─ LanSync.exe            电脑端（静默版）
-│  ├─ LanSync-控制台版.exe    电脑端（带窗口，排错用）
-│  └─ LanSync.apk            手机端
-├─ server/                   电脑端源码（Go，标准库 + 一个二维码库）
-│  ├─ main.go                服务、接口、通知、开机自启
-│  ├─ store.go               落盘、哈希、路径安全
-│  ├─ dav.go                 WebDAV 兜底
-│  └─ web/index.html         看板界面（内嵌进 exe）
-└─ app/                      手机端源码（Kotlin）
+├─ dist/                       发布产物（不进仓库，走 Releases）
+│  ├─ LanSync.exe              电脑端（静默版）
+│  ├─ LanSync-控制台版.exe      电脑端（带窗口，排错用）
+│  ├─ LanSync.apk              手机端
+│  └─ 使用说明.png              图文长图
+├─ server/                     电脑端源码（Go，标准库 + 一个二维码库）
+│  ├─ main.go                  服务、接口、鉴权、通知、开机自启
+│  ├─ store.go                 落盘、哈希、索引、路径安全
+│  ├─ outbox.go                「发给手机」的发件箱
+│  ├─ dav.go                   WebDAV 兜底
+│  ├─ pick_windows.go          系统文件/文件夹选择框
+│  └─ web/
+│     ├─ index.html            看板界面（内嵌进 exe）
+│     └─ send.html             手机收件页（内嵌进 exe）
+├─ app/                        手机端源码（Kotlin，原生 View，不用 Compose）
+│  └─ app/src/main/
+│     ├─ java/com/lansync/app/
+│     │  ├─ MainActivity.kt    主界面
+│     │  ├─ AlbumActivity.kt   备份范围（相册勾选）
+│     │  ├─ GuideActivity.kt   内置使用说明（WebView）
+│     │  ├─ SyncEngine.kt      扫描 → 核对 → 只传差异
+│     │  ├─ MediaScanner.kt    读媒体库，照搬手机目录结构
+│     │  ├─ Albums.kt          相册聚合与排除名单
+│     │  ├─ WatchService.kt    常驻守护，拍完照自动备份
+│     │  └─ SyncWorker.kt      后台定时任务（兜底）
+│     └─ assets/guide/         使用说明页（HTML + WebP，约 300 KB）
+├─ docs/
+│  ├─ 使用说明.md              图文步骤（就是长图的文字版）
+│  └─ tutorial/                长图源文件、配图、重新出图方法
+├─ AGENTS.md                   给接手的人：架构、接口、踩过的坑
+└─ LICENSE                     MIT
 ```
+
+---
+
+## 九、开源许可
+
+[MIT License](LICENSE) —— 随便用、随便改、商用也行，保留版权声明即可。
+
+用到的第三方组件：
+
+| 组件 | 用途 | 许可 |
+|---|---|---|
+| [skip2/go-qrcode](https://github.com/skip2/go-qrcode) | 生成配对二维码 | MIT |
+| [zxing-android-embedded](https://github.com/journeyapps/zxing-android-embedded) | 手机扫码 | Apache-2.0 |
+| AndroidX / Material Components | 界面 | Apache-2.0 |
+| OkHttp | 手机端 HTTP | Apache-2.0 |
+
+> 手机端目前用 debug 签名，方便直接安装体验。自己发布前请换成自己的 keystore——
+> 换签名会让已装的 App 无法覆盖升级（配对信息要重扫一次码）。
+
+## 十、其它文档
+
+- [使用说明](docs/使用说明.md) —— 装、配对、保活、排查、备份范围
+- [AGENTS.md](AGENTS.md) —— 接手开发先看这个：协议、约束、别踩的坑
+- [docs/tutorial](docs/tutorial) —— 长图源文件与重新出图步骤
