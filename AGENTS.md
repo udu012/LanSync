@@ -223,3 +223,31 @@ gradle assembleDebug
 - 用户非专业开发者，避免堆术语；报错要给具体点哪里
 - 不要承诺「一定不会被杀后台」，这是 Android 生态的固有问题
 - 用户在意「不丢数据」，涉及删除/覆盖的功能要先确认
+
+## 9. 发布与 CI
+
+仓库：<https://github.com/udu012/LanSync>（`main` 分支，MIT）
+
+发新版：
+
+1. 改 `app/app/build.gradle.kts` 的 `versionCode`（**必须 +1**，否则覆盖安装会失败）和 `versionName`
+2. `git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z`
+3. 建 Release，把 `dist/` 里的 exe / apk / png / zip 当附件传上去
+
+**附件名的坑**：GitHub 的 release 附件不支持中文文件名——传 `使用说明.png` 会变成
+`default.png`，`LanSync-控制台版.exe` 会变成 `LanSync-.exe`（curl 和 API 都一样，
+服务端直接 fallback，不是编码问题）。所以附件一律用 ASCII 名：
+`UserGuide.png`、`LanSync-console.exe`，zip 里保留中文名，README 和 Release 说明里
+写明对应关系。
+
+**CI**（`.github/workflows/build-apk.yml`）：push 到 main 自动出两个 artifact——
+`LanSync-windows`（交叉编译的静默版 + 控制台版）和 `LanSync-apk`（release 包）。
+
+别用 `android-actions/setup-android@v3`：它会去装已经废弃的 `tools` 包，
+报 `Failed to find package 'tools'` 整个 job 挂掉。改成显式
+`sdkmanager "platforms;android-34" "build-tools;34.0.0"`，用 runner 自带的 SDK。
+
+**两份说明文案**：`docs/使用说明.md`（GitHub 上看的）和
+`app/app/src/main/assets/guide/guide.html`（App 里看的）以及
+`docs/tutorial/使用说明源文件.html`（出长图用的）是三份排版、同一套内容，
+改一处要顺手改全，否则用户会看到三个版本说得不一样。
