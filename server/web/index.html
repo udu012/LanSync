@@ -95,7 +95,38 @@
   .num{font-size:19px;font-weight:650;letter-spacing:-.3px}
   .lbl{font-size:11.5px;color:var(--muted)}
   .row{margin-top:12px;font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:center}
-  .row code{color:var(--text);opacity:.75;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row code{flex:1;min-width:0;color:var(--text);opacity:.75;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mini{padding:4px 11px;font-size:12px;border-radius:8px;flex:none;color:var(--muted);background:transparent}
+  .mini:hover{color:var(--accent);border-color:var(--accent);background:rgba(37,99,235,.05)}
+  .mini[disabled]{opacity:.5;cursor:default}
+
+  /* 更换目录的确认弹层 */
+  .modal{position:fixed;inset:0;background:rgba(16,24,40,.42);z-index:50;display:flex;align-items:center;justify-content:center;padding:22px}
+  .modal[hidden]{display:none}
+  .mbox{background:var(--card);border-radius:15px;padding:22px 22px 18px;width:100%;max-width:430px;
+        box-shadow:0 18px 50px rgba(16,24,40,.22);animation:pop .16s ease-out}
+  @keyframes pop{from{transform:translateY(8px) scale(.985);opacity:0}to{transform:none;opacity:1}}
+  .mbox h3{margin:0 0 7px;font-size:15.5px;font-weight:600;letter-spacing:.1px}
+  .mbox p{margin:0;font-size:13px;color:var(--muted);line-height:1.65}
+  .mbox code{display:block;margin-top:11px;padding:9px 11px;background:var(--soft);border-radius:9px;
+             font-size:12px;word-break:break-all;color:var(--text);line-height:1.5}
+  .mbox code[hidden]{display:none}
+  .mbox input{width:100%;margin-top:13px;padding:9px 11px;font:inherit;font-size:13px;
+              border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--text)}
+  .mbox input:focus{outline:none;border-color:var(--accent)}
+  .mbox input[hidden]{display:none}
+  .mbtns{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap}
+  .mbtns button{flex:none}
+  .mbtns .primary{background:var(--accent);color:#fff;border-color:transparent}
+  .mbtns .primary:hover{filter:brightness(1.06);background:var(--accent)}
+
+  /* 操作结果提示 */
+  .toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,14px);z-index:60;
+         background:#1b212b;color:#fff;font-size:12.8px;line-height:1.55;padding:10px 17px;
+         border-radius:10px;max-width:88vw;text-align:center;opacity:0;pointer-events:none;
+         transition:opacity .2s,transform .2s;box-shadow:0 10px 30px rgba(16,24,40,.2)}
+  .toast.on{opacity:1;transform:translate(-50%,0)}
+  @media (prefers-color-scheme: dark){ .toast{background:#2b3341} }
   .actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
 
   .drop{
@@ -176,7 +207,7 @@
       <div><span class="num" id="numBytes">–</span><span class="lbl">总大小</span></div>
       <div><span class="num" id="numLast">–</span><span class="lbl">最后同步</span></div>
     </div>
-    <div class="row"><span>接收目录</span><code id="dir">…</code></div>
+    <div class="row"><span>接收目录</span><code id="dir">…</code><button class="mini" id="chgdir" title="更换存储位置">更改</button></div>
     <div class="actions">
       <button id="open">打开文件夹</button>
       <button class="ghost" id="refresh">刷新</button>
@@ -201,6 +232,17 @@
     <div id="files"><div class="empty">还没有收到文件</div></div>
   </section>
 </main>
+
+<div class="modal" id="modal" hidden>
+  <div class="mbox">
+    <h3 id="mtitle"></h3>
+    <p id="mtext"></p>
+    <code id="mpath" hidden></code>
+    <input id="minput" hidden spellcheck="false" autocomplete="off">
+    <div class="mbtns" id="mbtns"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
 
 <script>
 const $ = (s) => document.querySelector(s);
@@ -357,6 +399,127 @@ $('#files').addEventListener('click', async e => {
   await fetch('/api/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path: b.dataset.p})});
   loadList();
 });
+// ---------------------------------------------------------------- 弹层与提示
+
+function openModal(opt){
+  return new Promise(resolve => {
+    const m = $('#modal'), p = $('#mpath'), ip = $('#minput'), btns = $('#mbtns');
+    $('#mtitle').textContent = opt.title || '';
+    $('#mtext').textContent = opt.text || '';
+    p.hidden = !opt.path; p.textContent = opt.path || '';
+    ip.hidden = !opt.input;
+    if(opt.input){ ip.value = opt.inputValue || ''; ip.placeholder = opt.placeholder || ''; }
+    btns.innerHTML = '';
+    (opt.buttons || [{text:'好', value:true, cls:'primary'}]).forEach(b => {
+      const el = document.createElement('button');
+      el.textContent = b.text;
+      if(b.cls) el.className = b.cls;
+      el.onclick = () => { done({act: b.value, input: ip.value.trim()}); };
+      btns.appendChild(el);
+    });
+    function done(res){ m.hidden = true; document.removeEventListener('keydown', onKey); resolve(res); }
+    function onKey(e){ if(e.key === 'Escape') done({act: null}); }
+    document.addEventListener('keydown', onKey);
+    m.onclick = e => { if(e.target === m) done({act: null}); };
+    m.hidden = false;
+    if(opt.input) setTimeout(() => { ip.focus(); ip.select(); }, 60);
+  });
+}
+
+let toastTimer = null;
+function toast(msg){
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('on'), 4000);
+}
+
+// ---------------------------------------------------------------- 更换接收目录
+
+// pickDirPath 先试系统选择框；调不出来（非 Windows 或 PowerShell 缺失）就让人手填。
+async function pickDirPath(){
+  try{
+    const r = await fetch('/api/pickdir', {method:'POST'});
+    const j = await r.json();
+    if(j.ok) return j.dir;
+    if(!j.unsupported) return ''; // 用户点了取消
+  }catch(e){
+    /* 落到手动输入 */
+  }
+  const ans = await openModal({
+    title: '输入新的接收目录',
+    text: '位置不存在会自动创建。也可以写 D:\\手机备份 或 ~/备份。',
+    input: true,
+    inputValue: (info && info.dir) || '',
+    placeholder: 'D:\\手机备份',
+    buttons: [
+      {text:'取消', value:null, cls:'ghost'},
+      {text:'下一步', value:'go', cls:'primary'}
+    ]
+  });
+  return ans.act === 'go' ? ans.input : '';
+}
+
+async function doSwitch(dir){
+  const hasFiles = info && info.count > 0;
+  let move = false;
+  if(hasFiles){
+    const ans = await openModal({
+      title: '已有文件要不要一起搬过去？',
+      text: '当前目录里有 ' + info.count + ' 个文件，共 ' + human(info.bytes) + '。' +
+            '一起搬过去，新位置就是完整的一份；选择「只换位置」的话，这些文件会留在原处。',
+      path: dir,
+      buttons: [
+        {text:'取消', value:null, cls:'ghost'},
+        {text:'只换位置', value:'keep'},
+        {text:'一起搬过去', value:'move', cls:'primary'}
+      ]
+    });
+    if(!ans.act) return;
+    move = ans.act === 'move';
+  }
+
+  const btn = $('#chgdir');
+  const old = btn.textContent;
+  btn.textContent = move ? '搬移中' : '切换中';
+  if(move) toast('正在搬移文件，文件多的话需要一会儿，请不要关闭页面');
+  try{
+    const r = await fetch('/api/setdir', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({dir: dir, move: move})
+    });
+    const j = await r.json();
+    if(!j.ok){ toast(j.error || '切换失败'); return; }
+    if(j.unchanged){ toast('已经在这个目录了'); return; }
+    if(move){
+      toast(j.moved ? ('已搬到新位置：' + j.moved + ' 个文件 · ' + human(j.bytes)) : '目录已切换，没有需要搬的文件');
+    }else{
+      toast('已切换到新位置，旧目录里的文件留在原处');
+    }
+    loadInfo(); loadList();
+  }catch(e){
+    toast('切换失败，请确认电脑端还在运行');
+  }finally{
+    btn.textContent = old;
+  }
+}
+
+$('#chgdir').addEventListener('click', async () => {
+  const btn = $('#chgdir');
+  if(btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = '处理中';
+  try{
+    const dir = await pickDirPath();
+    if(dir) await doSwitch(dir);
+  }finally{
+    btn.disabled = false;
+    btn.textContent = '更改';
+  }
+});
+
 $('#open').addEventListener('click', () => fetch('/api/open', {method:'POST'}));
 $('#refresh').addEventListener('click', () => { loadInfo(); loadList(); });
 $('#quit').addEventListener('click', async () => {

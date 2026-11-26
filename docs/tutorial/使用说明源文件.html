@@ -309,7 +309,7 @@
       <div><i>✓</i><span>手机通知栏出现一条 <b>备份完成</b></span></div>
       <div><i>✓</i><span>文件躺在 <b>文档 \ LanSync \ 2026-11-26 \</b> 里（按日期自动分文件夹）</span></div>
     </div>
-    <div class="tip"><span class="i">i</span><span>同一次同步里重复的照片只会存一份，不会越传越多。想换存放位置，改程序目录下 <b>config.json</b> 里的 <b>dir</b> 就行。</span></div>
+    <div class="tip"><span class="i">i</span><span>同一次同步里重复的照片只会存一份，不会越传越多。想换存放位置不用改配置，看板上点「更改」即可，见最后一节。</span></div>
   </section>
 
   <!-- 五、排查 -->
@@ -334,12 +334,46 @@
     <div class="tip"><span class="i">i</span><span>如果电脑同时插着网线或连着别的 Wi-Fi，二维码可能指向手机到不了的地址。这时看板会多出一排「网络地址」按钮，点标着 <b>手机热点</b> 的那个，二维码会重新生成，再扫一次即可。</span></div>
   </section>
 
+  <!-- 七、换存储位置 -->
+  <section class="card">
+    <h2><span class="bar"></span>七、C 盘快满了？换个存的地方</h2>
+    <p class="sub">换到别的盘或移动硬盘，不用重装，也不用让手机重传</p>
+
+    <figure style="margin:20px 0 0">
+      <img src="chg_card.png" alt="更改接收目录">
+      <figcaption>看板「概览」里，接收目录后面那个橙色的「更改」</figcaption>
+    </figure>
+
+    <div class="step">
+      <div class="num">1</div>
+      <div class="body">
+        <h3>点「更改」，挑一个新文件夹</h3>
+        <p>会弹出 Windows 自带的文件夹选择框，选个地方就行，比如 <kbd>E:\手机备份</kbd>。没有的文件夹可以当场新建。</p>
+        <p>移动硬盘、U 盘、NAS 挂载盘都能选，只要能正常写入。</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">2</div>
+      <div class="body">
+        <h3>已经有文件时，它会问你要不要一起搬过去</h3>
+        <figure style="margin:16px 0 0">
+          <img src="chg_modal.png" alt="更换目录确认">
+        </figure>
+        <p style="margin-top:16px">选 <b class="k">一起搬过去</b>：旧文件全部挪到新位置，新位置就是完整的一份。同一个盘内几乎瞬间完成；跨盘（比如从 C 到 E）要按文件大小等一会儿，这期间别关页面。</p>
+        <p>选 <b class="k">只换位置</b>：以后收到的东西存到新位置，旧文件留在原地不动。</p>
+      </div>
+    </div>
+
+    <div class="tip"><span class="i">i</span><span>换完之后手机会自动对上号，<b>不会把老照片重传一遍</b>。想换回去，再点一次「更改」选回原来的文件夹就行。</span></div>
+  </section>
+
   <footer>
     <div class="ln"></div>
     所有文件只存在你自己的硬盘上，不经过任何第三方服务器<br>
     局域网内访问需要配对令牌，可在 config.json 中修改<br>
     <span style="color:#a9b1c0">同步 ≠ 备份：重要资料建议再复制一份到移动硬盘</span><br><br>
-    <span style="color:#b6bdc9;font-size:12.5px">LanSync v1.1.0</span>
+    <span style="color:#b6bdc9;font-size:12.5px">LanSync v1.2.0</span>
   </footer>
 
 </main>

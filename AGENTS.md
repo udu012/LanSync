@@ -9,7 +9,7 @@
 
 - **不做**：多设备互同步、双向、冲突合并、版本历史、公网穿透、账号体系
 - **Docker/服务器？** 不需要。电脑端就是一个单文件 exe，双击跑起来就完事
-- 当前版本 v1.1.0，双端已实现并编译通过
+- 当前版本 v1.2.0，双端已实现并编译通过
 
 ## 2. 技术栈与产物
 
@@ -62,6 +62,8 @@ App 端解析这个 URL 取 host / port / token，扫码一次永久保存。
 | `/api/list?limit=N` | GET | 是 | — | 文件列表 |
 | `/api/delete` | POST | 是 | `{"path":"..."}` | `{ok}` |
 | `/api/quit` | POST | 是 | — | 触发进程退出 |
+| `/api/pickdir` | POST | 是 | — | 弹系统文件夹选择框，返回 `{ok,dir}`；用户取消 `{ok:false,cancelled:true}`；不支持 `{ok:false,unsupported:true}` |
+| `/api/setdir` | POST | 是 | `{"dir":"D:\\手机备份","move":true}` | 切换接收目录，`move` 表示把旧文件一起搬过去；返回 `{ok,dir,old,moved,bytes,failed,indexed}` |
 | `/qr.png` | GET | 否 | 可带 `?ip=` 覆盖 | PNG 二维码 |
 | `/dav/*` | PROPFIND/MKCOL/PUT/GET/MOVE/DELETE/OPTIONS/LOCK | Basic | — | WebDAV 标准响应 |
 
@@ -84,7 +86,14 @@ App 端解析这个 URL 取 host / port / token，扫码一次永久保存。
 | `dav.go` | 目录 href **必须**以 `/` 结尾；`LOCK` 返回假 200 | 否则部分客户端不认目录，同步直接失败 |
 | `handlePut` | 先 `sanitizeRel` 再回显路径 | 否则报错信息里会泄漏净化前路径 |
 | `SyncWorker.kt` | 约束必须是 `NetworkType.CONNECTED`，**不能用 UNMETERED** | 手机开热点时 Wi-Fi 是关的，系统判定为计费蜂窝网，UNMETERED 永不满足，后台任务根本不启动 |
+| `store.go: getRoot/setRoot` | 接收目录一律走这两个函数，**不要直接读写 `rootDir`** | 上传协程与看板接口并发访问，切换目录时会出现「校验用旧目录、落盘用新目录」 |
+| `store.go: rebuildIndex` | 切换目录后必须重建索引 | 旧记录留着，手机上报同路径同大小的文件会被判「已存在」而跳过，可新目录里根本没有 |
+| `handleSetDir` | 先 `setRoot` 再 `migrateTo` | 迁移可能几分钟，先切目录能让这期间的上传直接落到新位置，不会丢在旧目录 |
+| `handleSetDir` | 必须拒绝互相包含的目录（`isSubPath`） | 否则迁移和统计会递归进自己 |
+| `pick_windows.go` | 结果走**临时 UTF-8 文件**而不是 stdout | PowerShell 默认按系统代码页输出，中文路径必乱码 |
+| `pick_windows.go` | 脚本文件要带 BOM 写入；`exit 2` 专表示用户取消 | PS 5.1 读无 BOM 的 UTF-8 会当 ANSI，中文提示会乱；靠退出码区分取消与失败 |
 | 看板 HTML | 改完必须 `go build` 重新生成 exe | HTML 是 `go:embed` 编译进去的 |
+| 看板 CSS | 带 `display:block` 的元素用 `hidden` 属性藏不住 | 类选择器优先级高于 UA 的 `[hidden]{display:none}`，要显式写 `xxx[hidden]{display:none}` |
 
 ## 6. 构建命令
 
@@ -123,6 +132,7 @@ gradle assembleDebug
 1. **APK 从未在真机跑过** — 沙箱无 Android 设备。扫码、MediaStore 读取、后台通知、热点场景下的自动同步都需要真机确认
 2. **Windows 专有路径未在 Windows 上执行** — Toast 通知（PowerShell/WinRT）、开机自启（reg add）、`findRunning` 在 Windows 上的端口探测
 3. 国产 ROM 保活效果未知（小米/OPPO/vivo 可能几小时杀一次）
+4. **`/api/pickdir` 的系统选择框只能在 Windows 上验证** —— 沙箱是 Linux，只跑过「不支持」回退路径；PowerShell 脚本是照 WinForms 文档写的，真机第一次点「更改」要留意有没有弹框
 
 **合理的下一步**（按价值排序）：
 1. 真机跑通并修 bug —— 优先级最高，其它都往后排

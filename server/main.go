@@ -29,7 +29,7 @@ import (
 
 const (
 	appName = "LanSync"
-	appVer  = "1.1.0"
+	appVer  = "1.2.0"
 )
 
 //go:embed web/index.html
@@ -45,7 +45,6 @@ type Config struct {
 var (
 	cfg      Config
 	cfgPath  string
-	rootDir  string
 	index    *Index
 	listenAt string
 	httpAddr string
@@ -465,7 +464,7 @@ func (s *server) handleAPI(w http.ResponseWriter, r *http.Request) {
 			"url":     fmt.Sprintf("http://%s:%d", lanIP(), runPort),
 			"dav":     fmt.Sprintf("http://%s:%d/dav", lanIP(), runPort),
 			"token":   cfg.Token,
-			"dir":     rootDir,
+			"dir":     getRoot(),
 			"notify":  cfg.Notify,
 			"count":   stats.Count,
 			"bytes":   stats.Bytes,
@@ -508,8 +507,14 @@ func (s *server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]interface{}{"ok": true})
 
 	case r.URL.Path == "/api/open" && r.Method == http.MethodPost:
-		openFolder(rootDir)
+		openFolder(getRoot())
 		writeJSON(w, 200, map[string]interface{}{"ok": true})
+
+	case r.URL.Path == "/api/pickdir" && r.Method == http.MethodPost:
+		s.handlePickDir(w, r)
+
+	case r.URL.Path == "/api/setdir" && r.Method == http.MethodPost:
+		s.handleSetDir(w, r)
 
 	case r.URL.Path == "/api/quit" && r.Method == http.MethodPost:
 		writeJSON(w, 200, map[string]interface{}{"ok": true})
@@ -602,6 +607,98 @@ func (s *server) handlePut(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handlePickDir 弹出系统「选择文件夹」对话框，只返回用户选的路径，不改变任何设置。
+func (s *server) handlePickDir(w http.ResponseWriter, r *http.Request) {
+	p, err := pickFolder(getRoot())
+	if err != nil {
+		writeJSON(w, 200, map[string]interface{}{
+			"ok": false, "unsupported": true, "error": err.Error(),
+		})
+		return
+	}
+	if p == "" {
+		writeJSON(w, 200, map[string]interface{}{"ok": false, "cancelled": true})
+		return
+	}
+	writeJSON(w, 200, map[string]interface{}{"ok": true, "dir": p})
+}
+
+// handleSetDir 切换接收目录。move=true 时把旧目录里已有的文件一起搬过去。
+func (s *server) handleSetDir(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Dir  string `json:"dir"`
+		Move bool   `json:"move"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 400, "参数错误")
+		return
+	}
+
+	dir := os.ExpandEnv(strings.TrimSpace(body.Dir))
+	if dir == "" {
+		writeErr(w, 400, "目录不能为空")
+		return
+	}
+	// 支持 ~ 手写简写
+	if dir == "~" || strings.HasPrefix(dir, "~/") || strings.HasPrefix(dir, `~\`) {
+		if home, err := os.UserHomeDir(); err == nil {
+			dir = filepath.Join(home, strings.TrimLeft(dir[1:], `/\`))
+		}
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		writeErr(w, 400, "路径无效")
+		return
+	}
+
+	old := getRoot()
+	if samePath(old, abs) {
+		writeJSON(w, 200, map[string]interface{}{
+			"ok": true, "dir": abs, "unchanged": true,
+		})
+		return
+	}
+	// 互相包含会让迁移和统计陷入递归，直接拒绝
+	if isSubPath(abs, old) || isSubPath(old, abs) {
+		writeErr(w, 400, "新目录不能和当前目录互相包含，请换一个位置（例如 D:\\手机备份）")
+		return
+	}
+	if err := os.MkdirAll(abs, 0o755); err != nil {
+		writeErr(w, 400, "无法创建目录："+err.Error())
+		return
+	}
+	probe := filepath.Join(abs, ".lansync-write-test")
+	if err := os.WriteFile(probe, []byte("ok"), 0o644); err != nil {
+		writeErr(w, 400, "这个位置没有写入权限，换一个试试")
+		return
+	}
+	os.Remove(probe)
+
+	// 先切目录、再搬文件：搬移可能要好几分钟，切换后新的上传直接落到新目录，
+	// 不会出现「传到一半目标变了」，也不会把新文件留在旧目录里。
+	setRoot(abs)
+	cfg.Dir = abs
+	saveConfig()
+
+	moved, bytes, failed := 0, int64(0), 0
+	if body.Move {
+		moved, bytes, failed = migrateTo(old, abs)
+	}
+	n := rebuildIndex(abs)
+
+	log.Printf("接收目录切换：%s → %s（搬移 %d 个 / %s，失败 %d，索引 %d 项）",
+		old, abs, moved, humanBytes(bytes), failed, n)
+	writeJSON(w, 200, map[string]interface{}{
+		"ok":      true,
+		"dir":     abs,
+		"old":     old,
+		"moved":   moved,
+		"bytes":   bytes,
+		"failed":  failed,
+		"indexed": n,
+	})
+}
+
 type fileRow struct {
 	Path  string `json:"path"`
 	Size  int64  `json:"size"`
@@ -617,14 +714,15 @@ func (s *server) handleList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	rows := make([]fileRow, 0, 256)
-	_ = filepath.Walk(rootDir, func(p string, info os.FileInfo, err error) error {
+	root := getRoot()
+	_ = filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
 		if err != nil || info == nil || info.IsDir() {
 			return nil
 		}
 		if strings.HasSuffix(p, ".part") || strings.Contains(filepath.Base(p), ".part") {
 			return nil
 		}
-		rel, e := filepath.Rel(rootDir, p)
+		rel, e := filepath.Rel(root, p)
 		if e != nil {
 			return nil
 		}
@@ -653,7 +751,7 @@ type stats struct {
 
 func scanStats() stats {
 	var st stats
-	_ = filepath.Walk(rootDir, func(p string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(getRoot(), func(p string, info os.FileInfo, err error) error {
 		if err != nil || info == nil || info.IsDir() {
 			return nil
 		}
@@ -752,10 +850,10 @@ func main() {
 		}
 	}
 
-	rootDir = cfg.Dir
-	if err := os.MkdirAll(rootDir, 0o755); err != nil {
-		rootDir = filepath.Join(dir, "接收文件")
-		_ = os.MkdirAll(rootDir, 0o755)
+	setRoot(cfg.Dir)
+	if err := os.MkdirAll(getRoot(), 0o755); err != nil {
+		setRoot(filepath.Join(dir, "接收文件"))
+		_ = os.MkdirAll(getRoot(), 0o755)
 	}
 
 	// 端口避让只影响本次运行，结果不写回配置文件。
@@ -781,13 +879,13 @@ func main() {
 
 	fmt.Println("──────────────────────────────────────────")
 	fmt.Printf("  %s %s 已启动\n", appName, appVer)
-	fmt.Printf("  接收目录 : %s\n", rootDir)
+	fmt.Printf("  接收目录 : %s\n", getRoot())
 	fmt.Printf("  电脑看板 : http://127.0.0.1:%d\n", runPort)
 	fmt.Printf("  手机地址 : http://%s:%d\n", ip, runPort)
 	fmt.Printf("  配对令牌 : %s\n", cfg.Token)
 	fmt.Println("──────────────────────────────────────────")
 
-	log.Printf("启动完成 port=%d dir=%s", runPort, rootDir)
+	log.Printf("启动完成 port=%d dir=%s", runPort, getRoot())
 
 	if *openUI && runtime.GOOS == "windows" {
 		go func() {
