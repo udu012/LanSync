@@ -126,7 +126,12 @@
          border-radius:10px;max-width:88vw;text-align:center;opacity:0;pointer-events:none;
          transition:opacity .2s,transform .2s;box-shadow:0 10px 30px rgba(16,24,40,.2)}
   .toast.on{opacity:1;transform:translate(-50%,0)}
-  @media (prefers-color-scheme: dark){ .toast{background:#2b3341} }
+  @media (prefers-color-scheme: dark){
+    /* 深色底上 0.42 的遮罩几乎看不出层次，弹层会和背景糊在一起 */
+    .modal{background:rgba(0,0,0,.62)}
+    .mbox{border:1px solid var(--line)}
+    .toast{background:#2b3341}
+  }
   .actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
 
   .drop{
