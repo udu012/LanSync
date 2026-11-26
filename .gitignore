@@ -11,6 +11,7 @@ local.properties
 dist/*.exe
 dist/*.apk
 dist/*.zip
+dist/*.png
 
 # 运行时生成
 config.json
