@@ -65,9 +65,11 @@ class MainActivity : AppCompatActivity() {
             Prefs.save(this, next)
             if (next.auto) {
                 Scheduler.enable(this)
+                WatchService.start(this) // 常驻守护：拍完照几秒就自动备份
                 askBattery()
             } else {
                 Scheduler.disable(this)
+                WatchService.stop(this)
             }
             refresh()
         }
@@ -78,6 +80,9 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refresh()
+        // 配对过又开着自动备份，就把守护服务拉起来（进程被系统清过也能自愈）
+        val p = Prefs.load(this)
+        if (p.paired && p.auto) WatchService.start(this)
     }
 
     private fun refresh() {
@@ -99,7 +104,9 @@ class MainActivity : AppCompatActivity() {
             setDesiredBarcodeFormats(ScanOptions.QR_CODE)
             setPrompt("对准电脑屏幕上的二维码")
             setBeepEnabled(false)
-            setOrientationLocked(false)
+            // 扫码页默认会跟着重力传感器转：手一歪就变横屏，二维码框爬起来很别扭。
+            // 锁成竖屏，跟这个页面（也跟着手机）一致。
+            setOrientationLocked(true)
         }
         scanLauncher.launch(opts)
     }
@@ -131,6 +138,7 @@ class MainActivity : AppCompatActivity() {
                     toast("连接正常，可以开始备份了")
                     if (p.auto) {
                         Scheduler.enable(this)
+                        WatchService.start(this)
                         askBattery()
                     }
                     SyncService.start(this)

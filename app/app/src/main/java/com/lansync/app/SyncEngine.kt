@@ -16,6 +16,9 @@ object SyncEngine {
         val message: String
     )
 
+    // 后台定时任务、守护服务、手动同步可能同时开火，串行化避免同一文件被传两遍
+    // 或者两边抢着写 lastResult。
+    @Synchronized
     fun sync(
         ctx: Context,
         onProgress: (done: Int, total: Int, name: String) -> Unit = { _, _, _ -> }

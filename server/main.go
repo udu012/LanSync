@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -29,7 +30,7 @@ import (
 
 const (
 	appName = "LanSync"
-	appVer  = "1.2.0"
+	appVer  = "1.3.0"
 )
 
 //go:embed web/index.html
@@ -533,6 +534,17 @@ func (s *server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// legacyDayPath 匹配 v1.2 的老归档路径：2026-08-14/IMG_0001.jpg
+// v1.3 改成照搬手机目录（DCIM/Camera/IMG_0001.jpg），老记录靠这个特征识别出来做认领。
+var legacyDayPath = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}/[^/]+$`)
+
+// legacyFile 是索引里的一条老记录，认领时要把它的哈希一起搬到新路径，
+// 否则跨路径去重（dedup）会失效。
+type legacyFile struct {
+	path string
+	meta FileMeta
+}
+
 // handleCheck 是无感核对的核心：手机把本地清单报上来，电脑只回复「哪些需要传」。
 func (s *server) handleCheck(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -546,8 +558,29 @@ func (s *server) handleCheck(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "参数错误")
 		return
 	}
+
 	need := make([]string, 0, 32)
 	have := 0
+	adopted := 0
+
+	// 老版本按「日期/文件名」归档，新版本按手机原始目录。升级后同一张照片的
+	// 目标路径变了，光比路径会判「缺失」→ 整批重传几 GB。所以先用「大小 + 修改
+	// 时间完全相同」把老记录认领到新路径（磁盘上 rename，手机不传字节）。
+	wanted := make(map[string]bool, len(body.Items))
+	for _, it := range body.Items {
+		if rel, err := sanitizeRel(it.Path); err == nil {
+			wanted[rel] = true
+		}
+	}
+	legacy := make(map[string][]legacyFile) // "size:mtime" → 老记录列表
+	for p, m := range index.snapshot() {
+		if !legacyDayPath.MatchString(p) || wanted[p] {
+			continue // 只认老路径，且不能被本次清单本身引用，防止互相顶替
+		}
+		k := fmt.Sprintf("%d:%d", m.Size, m.Mtime)
+		legacy[k] = append(legacy[k], legacyFile{path: p, meta: m})
+	}
+
 	for _, it := range body.Items {
 		rel, err := sanitizeRel(it.Path)
 		if err != nil {
@@ -559,7 +592,28 @@ func (s *server) handleCheck(w http.ResponseWriter, r *http.Request) {
 			have++
 			continue
 		}
+		if it.Size > 0 {
+			k := fmt.Sprintf("%d:%d", it.Size, it.Mtime)
+			claimed := false
+			for i, old := range legacy[k] {
+				if adoptPath(old.path, rel) {
+					index.del(old.path)
+					index.set(rel, FileMeta{Size: it.Size, Mtime: it.Mtime, SHA256: old.meta.SHA256})
+					legacy[k] = append(legacy[k][:i], legacy[k][i+1:]...)
+					claimed = true
+					adopted++
+					break
+				}
+			}
+			if claimed {
+				have++
+				continue
+			}
+		}
 		need = append(need, rel)
+	}
+	if adopted > 0 {
+		log.Printf("归档路径变更：%d 个老文件已就地改名到新目录，无需手机重传", adopted)
 	}
 	log.Printf("核对清单：共 %d 项，已存在 %d，待传输 %d", len(body.Items), have, len(need))
 	writeJSON(w, 200, map[string]interface{}{

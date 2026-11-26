@@ -225,6 +225,28 @@ func writeIncoming(rel string, r io.Reader, mtime int64) (FileMeta, bool, error)
 	return meta, dup, nil
 }
 
+// adoptPath 把已经收过的旧文件原地改名到新路径，返回是否成功。
+// 用途：v1.2 按「日期/文件名」归档，v1.3 改成照搬手机目录结构，同一张照片
+// 的目标路径变了。改名（同目录树内 rename）瞬间完成且保留 mtime，
+// 比让手机重传几 GB 划算得多。
+func adoptPath(oldRel, newRel string) bool {
+	oldFull, err := absPath(oldRel)
+	if err != nil {
+		return false
+	}
+	newFull, err := absPath(newRel)
+	if err != nil {
+		return false
+	}
+	if _, err := os.Stat(newFull); err == nil {
+		return false // 新位置已经有东西了，别覆盖
+	}
+	if err := os.MkdirAll(filepath.Dir(newFull), 0o755); err != nil {
+		return false
+	}
+	return os.Rename(oldFull, newFull) == nil
+}
+
 // ---------------------------------------------------------------- 接收目录切换
 
 // rootDir 会被上传协程和看板接口并发读取，切换目录时用读写锁保护，

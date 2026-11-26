@@ -15,11 +15,29 @@ import (
 // 而是写成 UTF-8 文件再读回来，彻底绕开编码问题。
 const pickScript = `$ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms | Out-Null
+
+# 这个脚本是隐藏窗口启动的，进程没有前台窗口，直接 ShowDialog() 弹出来的框
+# 会被系统当成"无主窗口"，压在浏览器后面，用户得先回到桌面才看得见。
+# 办法是造一个不可见、但 TopMost 的 Form 当 owner——对话框跟着它一起浮到最前。
+$owner = New-Object System.Windows.Forms.Form
+$owner.Text = 'LanSync'
+$owner.FormBorderStyle = 'None'
+$owner.ShowInTaskbar = $false
+$owner.StartPosition = 'CenterScreen'
+$owner.Size = New-Object System.Drawing.Size(1, 1)
+$owner.Opacity = 0
+$owner.TopMost = $true
+$owner.Show()
+$owner.Activate() | Out-Null
+
 $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
 $dlg.Description = '选择手机资料的存放位置'
 $dlg.ShowNewFolderButton = $true
 if (CURDIR -ne '') { $dlg.SelectedPath = CURDIR }
-if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+
+$r = $dlg.ShowDialog($owner)
+$owner.Close()
+if ($r -eq [System.Windows.Forms.DialogResult]::OK) {
   [IO.File]::WriteAllText(OUTFILE, $dlg.SelectedPath, (New-Object System.Text.UTF8Encoding($false)))
   exit 0
 }

@@ -13,8 +13,10 @@ object Notifications {
 
     const val CH_RESULT = "sync_result"
     const val CH_SERVICE = "sync_service"
+    const val CH_WATCH = "watch_service"
     const val ID_SERVICE = 1001
     const val ID_RESULT = 1002
+    const val ID_WATCH = 1003
 
     fun ensureChannels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
@@ -29,6 +31,29 @@ object Notifications {
                 setShowBadge(false)
             }
         )
+        // 常驻静默通知：不响、不弹、不显示角标，只是告诉系统「这个服务还在干活」，
+        // 顺便让用户随时能点进来看当前状态。
+        nm.createNotificationChannel(
+            NotificationChannel(CH_WATCH, "自动备份守护", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "发现新照片就自动备份，常驻但完全静音"
+                setShowBadge(false)
+                lockscreenVisibility = Notification.VISIBILITY_SECRET
+            }
+        )
+    }
+
+    /** 守护服务的前台通知：新版 Android 要求前台服务必须挂一条可见通知。 */
+    fun watching(ctx: Context, text: String): Notification {
+        return NotificationCompat.Builder(ctx, CH_WATCH)
+            .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
+            .setContentTitle("LanSync 自动备份已开启")
+            .setContentText(text)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setContentIntent(openApp(ctx))
+            .build()
     }
 
     private fun openApp(ctx: Context): PendingIntent {

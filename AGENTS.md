@@ -9,14 +9,14 @@
 
 - **不做**：多设备互同步、双向、冲突合并、版本历史、公网穿透、账号体系
 - **Docker/服务器？** 不需要。电脑端就是一个单文件 exe，双击跑起来就完事
-- 当前版本 v1.2.0，双端已实现并编译通过
+- 当前版本 v1.3.0，双端已实现并编译通过
 
 ## 2. 技术栈与产物
 
 | 端 | 语言/框架 | 产物 |
 |---|---|---|
 | 电脑端 | Go 1.21+，标准库 + `github.com/skip2/go-qrcode` | `dist/LanSync.exe`（5.3MB，`-H windowsgui` 无窗口） |
-| 手机端 | Kotlin 1.9 / AGP 8.x，minSdk 26 / target 34 | `dist/LanSync.apk`（debug 签名，6.6MB） |
+| 手机端 | Kotlin 1.9 / AGP 8.x，minSdk 26 / target 34 | `dist/LanSync.apk`（debug 签名，5.3MB） |
 | 界面 | 单文件 HTML + 原生 JS，`go:embed` 内嵌进 exe | `server/web/index.html` |
 
 ## 3. 目录地图
@@ -31,11 +31,12 @@ app/app/src/main/
   java/com/lansync/app/
     Config.kt        SharedPreferences 存 host/port/token，baseUrl 拼装
     Api.kt           OkHttp 封装：check / put 流式上传
-    MediaScanner.kt  扫 MediaStore 拿照片视频清单
-    SyncEngine.kt    核对 + 逐个上传的主流程（协程）
-    SyncWorker.kt    WorkManager 定时任务（连 Wi-Fi 才跑）
-    SyncService.kt   前台服务，防被系统回收
-    BootReceiver.kt  开机重挂任务
+    MediaScanner.kt  扫 MediaStore 拿照片视频清单（按 RELATIVE_PATH 保留手机目录）
+    SyncEngine.kt    核对 + 逐个上传的主流程（@Synchronized，三处调用共用）
+    SyncWorker.kt    WorkManager 15 分钟周期任务（兜底，连网就跑）
+    WatchService.kt  常驻守护：ContentObserver 盯媒体库，拍完照几秒内触发同步
+    SyncService.kt   前台服务，手动「立即同步」用
+    BootReceiver.kt  开机重挂定时任务 + 拉起守护服务
     MainActivity.kt  扫码配对 + 三个按钮
   res/layout/activity_main.xml   手机界面
 ```
@@ -70,6 +71,17 @@ App 端解析这个 URL 取 host / port / token，扫码一次永久保存。
 **核对逻辑（核心，别改坏）**：`size` 相等 **且** `|mtime 差| <= 5 秒` 才算已存在，否则进 `need`。
 路径一律先过 `sanitizeRel()` 再查索引，`..` 直接判为待传输（后续 PUT 会被 `absPath` 拦住）。
 
+**手机端路径规则（v1.3 起）**：`MediaScanner` 用 `MediaStore.MediaColumns.RELATIVE_PATH` 拼出
+`DCIM/Camera/IMG_0001.jpg` 这样的相对路径，电脑上照搬手机相册的目录结构。Android 9 及以下用 `DATA`
+列截掉 `/storage/emulated/0/` 前缀；拿不到目录的文件放 `未分类/`。v1.2 是「日期/文件名」，两版不兼容。
+
+**老路径认领（`handleCheck` 里的 `legacyDayPath` + `adoptPath`）**：升级到 v1.3 后同一张照片的目标路径
+变了，光比路径会判「缺失」→ 整批重传几 GB。所以 `check` 会拿「大小 + mtime 完全相同」把 `YYYY-MM-DD/xxx`
+形式的老记录**在磁盘上 rename 到新路径**，手机一个字节都不用传。三条硬约束：
+① 只认 `^\d{4}-\d{2}-\d{2}/[^/]+$` 的老路径；② 该老路径不能出现在本次清单里（防互相顶替）；
+③ 新位置已存在文件时不认领（`adoptPath` 先 `Stat`，绝不覆盖）。认领时把老记录的 `sha256` 一起搬走，
+跨路径去重才不失灵。
+
 ## 5. 关键实现约束（前人踩过的坑，别重犯）
 
 | 位置 | 约束 | 原因 |
@@ -92,6 +104,10 @@ App 端解析这个 URL 取 host / port / token，扫码一次永久保存。
 | `handleSetDir` | 必须拒绝互相包含的目录（`isSubPath`） | 否则迁移和统计会递归进自己 |
 | `pick_windows.go` | 结果走**临时 UTF-8 文件**而不是 stdout | PowerShell 默认按系统代码页输出，中文路径必乱码 |
 | `pick_windows.go` | 脚本文件要带 BOM 写入；`exit 2` 专表示用户取消 | PS 5.1 读无 BOM 的 UTF-8 会当 ANSI，中文提示会乱；靠退出码区分取消与失败 |
+| `pick_windows.go` | `FolderBrowserDialog` 必须挂一个不可见、`TopMost` 的 owner Form 再 `ShowDialog($owner)` | 脚本是隐藏窗口启动的，没有前台窗口，无主对话框会被系统排到浏览器后面，用户得回桌面才看得见 |
+| `AndroidManifest.xml` | `CaptureActivity` 要 `tools:replace="android:screenOrientation"` 覆盖成 `portrait` | zxing 库自己声明的是 `fullSensor`，手机一歪扫码页就横过来 |
+| `WatchService.kt` | 前台服务 + `startForeground(ID_WATCH, …)`，`START_STICKY`，`onDestroy` 必须注销 observer | 没有前台通知会被系统随时杀掉；observer 漏注册/漏注销会同时丢事件和漏内存 |
+| `SyncEngine.sync` | 必须 `@Synchronized` | 定时任务、守护服务、手动同步三处会同时开火，并发跑会把同一批文件传两遍 |
 | 看板 HTML | 改完必须 `go build` 重新生成 exe | HTML 是 `go:embed` 编译进去的 |
 | 看板 CSS | 带 `display:block` 的元素用 `hidden` 属性藏不住 | 类选择器优先级高于 UA 的 `[hidden]{display:none}`，要显式写 `xxx[hidden]{display:none}` |
 
@@ -128,18 +144,28 @@ gradle assembleDebug
 4. 手机端 `NetworkType` 改为 `CONNECTED`，热点场景后台任务能正常触发；探测超时压到 2 秒
 5. 顺带：日志同时输出到 stdout（控制台版终于能看到实时日志）；看板明确提示「关网页不停同步」
 
+**v1.3.0 改的七件事**：
+1. 文件夹选择框加了 TopMost owner 窗体，不再被浏览器压在后面
+2. 扫码页锁竖屏（覆盖 zxing 的 `fullSensor`）
+3. 新增 `WatchService` 常驻守护：ContentObserver 收媒体库变更，攒 6 秒防抖后自动同步，拍完照十几秒电脑上就有
+4. 接收目录改成照搬手机相册目录（`DCIM/Camera/...`），不再按日期分文件夹
+5. `check` 支持把 v1.2 的日期老路径自动认领到新路径，升级不重传（Linux 侧实测：`have:1, need:[]`，文件已改名、索引已迁移、sha 保留）
+6. 守护服务的通知是 `IMPORTANCE_MIN` + `setSilent`，不响不弹
+7. 版本号 1.3.0（APK versionCode 4，可覆盖安装，配对信息不丢）
+
 **未验证（重要）**：
 1. **APK 从未在真机跑过** — 沙箱无 Android 设备。扫码、MediaStore 读取、后台通知、热点场景下的自动同步都需要真机确认
 2. **Windows 专有路径未在 Windows 上执行** — Toast 通知（PowerShell/WinRT）、开机自启（reg add）、`findRunning` 在 Windows 上的端口探测
 3. 国产 ROM 保活效果未知（小米/OPPO/vivo 可能几小时杀一次）
-4. **`/api/pickdir` 的系统选择框只能在 Windows 上验证** —— 沙箱是 Linux，只跑过「不支持」回退路径；PowerShell 脚本是照 WinForms 文档写的，真机第一次点「更改」要留意有没有弹框
+4. **`/api/pickdir` 的系统选择框只能在 Windows 上验证** —— 沙箱是 Linux，只跑过「不支持」回退路径；PowerShell 脚本是照 WinForms 文档写的，真机第一次点「更改」要留意有没有弹框、有没有压到后面
+5. **v1.3 三项手机端改动（竖屏、常驻守护、目录规则）都没上过真机** —— 编译通过不等于跑通，重点看：常驻通知是否出现、拍完照十几秒是否自动传、电脑上目录是否变成 `DCIM/Camera`
 
 **合理的下一步**（按价值排序）：
 1. 真机跑通并修 bug —— 优先级最高，其它都往后排
-2. `ContentObserver` 实时监听相册，拍完几秒就传（替代 WorkManager 15 分钟周期）
-3. 电脑端托盘图标（现在只能靠看板「退出」按钮关）
-4. 上传断点续传（现在断网要整文件重传）
-5. 正式签名 + 版本升级不丢配对信息
+2. 电脑端托盘图标（现在只能靠看板「退出」按钮关）
+3. 上传断点续传（现在断网要整文件重传）
+4. 正式签名（现在 debug 签名，换签名会丢配对信息）
+5. 通知里加「今天已备份 N 张」，让用户有确定感
 
 ## 8. 代码约定
 
