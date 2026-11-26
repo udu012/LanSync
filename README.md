@@ -18,10 +18,13 @@
 | 文件 | 给谁用 | 说明 |
 |---|---|---|
 | `LanSync.exe` | 电脑 | 静默运行，双击即用，已自动加入开机启动 |
-| `LanSync-控制台版.exe` | 电脑 | 带黑窗口，连不上时用它看日志 |
-| `LanSync.apk` | 手机 | 扫码配对后自动备份 |
-| `使用说明.png` | 都看 | 一张图文长图，可以直接转发给家人 |
+| `LanSync-console.exe` | 电脑 | 带黑窗口的控制台版，连不上时用它看日志 |
+| `LanSync.apk` | 手机 | 扫码配对后自动备份（Android 8.0+） |
+| `UserGuide.png` | 都看 | 一张图文长图，可以直接转发给家人 |
 | `LanSync-v1.3.1.zip` | 全部 | 上面四个打成一个包 |
+
+> GitHub 的发布附件不支持中文文件名，所以控制台版和长图在 Releases 里叫
+> `LanSync-console.exe`、`UserGuide.png`，压缩包里仍是 `LanSync-控制台版.exe`、`使用说明.png`，内容一致。
 
 一步步怎么做，看 [使用说明](docs/使用说明.md)。
 
